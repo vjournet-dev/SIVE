@@ -24,6 +24,7 @@ Requires-Dist: beautifulsoup4==4.15.0
 Requires-Dist: chromadb==1.5.9
 Requires-Dist: ddgs==9.14.4
 Requires-Dist: httpx==0.28.1
+Requires-Dist: json5==0.17.3
 Requires-Dist: lxml==6.1.1
 Requires-Dist: mcp==2.0.0
 Requires-Dist: openpyxl==3.1.5
@@ -31,6 +32,7 @@ Requires-Dist: playwright==1.61.0
 Requires-Dist: pypdf==6.14.2
 Requires-Dist: python-docx==1.2.0
 Requires-Dist: sentence-transformers==5.6.1
+Requires-Dist: tomlkit==0.15.2
 Provides-Extra: dev
 Requires-Dist: pytest==9.1.1; extra == "dev"
 Requires-Dist: black==26.5.1; extra == "dev"
@@ -60,7 +62,7 @@ de synchronisation plus fréquente et une architecture de traitement dédiée.
 
 - Python 3.11+
 - pip
-- un client MCP (Claude Desktop, VS Code MCP, etc.)
+- GitHub Copilot CLI, Claude Code, Codex ou OpenCode v2
 
 ## 2) Installation (uv recommandé)
 
@@ -118,7 +120,7 @@ sive --help
 L'installation avec pip ou `uv tool install` expose une seule commande: `sive`.
 Le dépôt officiel est https://github.com/vjournet-dev/SIVE.
 
-### Installer les skills/prompts client `/sive`
+### Installer la skill SIVE et le MCP
 
 Après installation, exécutez une fois:
 
@@ -126,39 +128,53 @@ Après installation, exécutez une fois:
 sive install --target all
 ```
 
-Emplacements par défaut utilisés:
+Seules les cibles `github`, `claude`, `codex`, `opencode` sont supportées.
 
-- Claude: `~/.claude/skills/sive` (`SKILL.md`, `SYSTEM_PROMPT.txt`)
-- Copilot: `~/.copilot/instructions` (`sive.instructions.md`)
-- GPT: `~/.sive/gpt` (`SYSTEM_PROMPT.txt`)
-- Gemini: `~/.sive/gemini` (`SYSTEM_PROMPT.txt`)
-- Microsoft Cowork: `~/OneDrive/Documents/Cowork/skills/sive` (`SKILL.md`, `references/README-COWORK.md`, `references/manifest.json`, `references/MCP_SERVER.json`, `references/color.png`, `references/outline.png`)
+| Cible | Skill personnelle | Configuration MCP native |
+| --- | --- | --- |
+| `github` (GitHub Copilot CLI) | `~/.copilot/skills/sive/SKILL.md` | `~/.copilot/mcp-config.json` |
+| `claude` (Claude Code) | `~/.claude/skills/sive/SKILL.md` | `~/.claude.json` |
+| `codex` | `~/.agents/skills/sive/SKILL.md` | `~/.codex/config.toml` |
+| `opencode` (v2) | `~/.config/opencode/skills/sive/SKILL.md` | `~/.config/opencode/opencode.json(c)` |
+
+La skill est un `SKILL.md` avec frontmatter `name` et `description`, chargé par
+le client quand de la documentation est pertinente. Aucun prompt système n'est
+généré. Les autres serveurs et réglages MCP existants sont conservés; les fichiers
+invalides sont signalés sans écrasement. Les commentaires TOML sont conservés,
+mais les commentaires JSONC sont retirés lors de la réécriture.
+Les anciens fichiers de prompts ne sont pas supprimés automatiquement:
+retirez-les des profils clients si vous les aviez activés.
 
 Vous pouvez forcer un dossier de sortie explicite:
 
 ```bash
-sive install --target gpt --output-dir ./out/prompts
+sive install --target codex --output-dir ./out/skills
 ```
 
 Important: uv/pip ne peuvent pas executer un hook post-install universel pour configurer les clients LLM. Cette commande doit être lancee manuellement une fois après installation.
 
-La commande `sive install` ecrit aussi des fichiers de configuration MCP client avec le Python et le `cwd` détectés automatiquement:
+L'export contient `sive/SKILL.md` et les snippets natifs de la cible
+(`codex.mcp.toml` dans cet exemple). Avec `all`, il ajoute `github.mcp.json`,
+`claude.mcp.json` et `opencode.mcp.json`. L'export n'active pas les clients.
 
-- Claude: `MCP_SERVER.json`
-- Copilot: `sive.mcp.json`
-- GPT/Gemini: `MCP_SERVER.json`
-
-Pour Microsoft Cowork, la cible installe par défaut la skill dans le dossier OneDrive recommandé (`~/OneDrive/Documents/Cowork/skills/sive/`) et copie automatiquement `MCP_SERVER.json`, `color.png` (192x192) et `outline.png` (32x32) dans `references/`.
-
-Important: dans Cowork, un MCP local `stdio` (command/cwd) n'est pas exécuté directement. Le fichier `MCP_SERVER.json` sert de référence de config locale; pour des tools MCP opérationnels dans Cowork, publiez un connecteur MCP distant HTTPS et déclarez-le dans le manifeste plugin (`agentConnectors.remoteMcpServer`).
-
-Par défaut, la config MCP générée utilisé l'exécutable installé `sive` (par exemple dans `~/.local/bin` ou le dossier `Scripts`) avec `serve` comme argument. Le `cwd` par défaut est le dossier de cet exécutable.
+Par défaut, le MCP lance `sive serve`, ou le Python courant avec `-m sive serve`.
+Le `cwd` est le dossier de l'exécutable sauf pour Claude Code, qui ne supporte
+pas ce champ dans sa configuration stdio.
 
 Vous pouvez imposer les valeurs de config MCP:
 
 ```bash
-sive install --target all --python-exécutable "C:/path/to/python.exe" --mcp-cwd "C:/path/to/project"
+sive install --target all --python-executable "C:/path/to/python.exe" --mcp-cwd "C:/path/to/project"
 ```
+
+Rechargez les skills ou redémarrez votre client. La skill demande de découvrir
+les sources avec `list_documentation_sites_in_database`, puis de chercher chaque
+concept avec `search_documentation` avant de répondre ou coder, en citant les
+sources. Si une documentation pertinente manque, elle propose de l'ingérer avec
+SIVE après confirmation du périmètre, puis de rechercher à nouveau.
+Si le MCP est indisponible, le CLI peut ingérer les sources confirmées; la
+recherche nécessite un client connecté à `sive serve` (pas de commande CLI
+autonome de recherche). Le chargement reste soumis aux permissions du client.
 
 ## 3) Lancer le serveur MCP localement
 
@@ -278,7 +294,9 @@ Exemples:
 
 Point cle: le slash command est gere par le client. Le serveur expose le tool MCP `ingest` pour demarrer l'ingestion.
 
-Important: l'installation pip ne peut pas enregistrer automatiquement `/sive` pour tous les LLM. Le mapping slash doit être configure client par client (Claude, GitHub Copilot, GPT, Gemini, etc.).
+Important: pip ne peut pas enregistrer `/sive` universellement. `sive install`
+déploie la skill pour les quatre clients supportés; son invocation explicite
+dépend du client. Le mapping des sous-commandes est contenu dans la skill.
 
 Vous devez configurer le client pour transformer:
 
@@ -313,69 +331,27 @@ Une fois la regle client en place, validez ces cas:
   - appeler `ingest_status(job_id)` puis eventuellement `wait_for_ingest_completion(job_id)`
   - attendu: progression puis statut final
 
-Exemple de configuration MCP (format type mcpServers):
+Exemple de configuration utilisateur Claude Code (`~/.claude.json`):
 
 ```json
 {
   "mcpServers": {
     "sive": {
-      "command": "python",
-      "args": ["-m", "sive", "serve"],
-      "cwd": "C:/path/to/your/project"
-    }
-  }
-}
-```
-
-Configuration avec MCP_SYSTEM_PROMPT (recommandé):
-
-Important:
-
-- MCP_SYSTEM_PROMPT est une variable d environnement transmise au processus MCP.
-- Cette variable ne force pas a elle seule la politique d orchestration du client IA.
-- Pour imposer MCP-first, configurez aussi les instructions du profil assistant dans votre client IA et désactivez les connecteurs concurrents (ex: Context7) pour ce profil/workspace.
-
-```json
-{
-  "mcpServers": {
-    "sive": {
+      "type": "stdio",
       "command": "C:/path/to/your/project/.venv/Scripts/python.exe",
-      "args": ["-m", "sive", "serve"],
-      "cwd": "C:/path/to/your/project",
-      "env": {
-        "HF_TOKEN": "hf_xxx",
-        "MCP_SYSTEM_PROMPT": "HARD RULES: 1) sive is the ONLY allowed connector for project documentation retrieval while available. 2) NEVER call Context7 (or any other doc connector) before attempting sive. 3) For any project/API/config/troubleshooting/version question, always execute this sequence first: list_indexed_doc_sites(); search_documentation(query, topic=..., site_id=... when known). 4) Slash mapping rule: when user writes /sive <url>, call ingest(url=<url>) immediately. 5) If user asks to add a new documentation source without /sive: require explicit URL; if missing, call suggest_documentation_urls(topic), présent candidates, get confirmation, then call ingest_and_register_topic(topic, url). 6) After ingestion starts, either (A) poll ingest_status(job_id) to show progress_percent/phase, or (B) call wait_for_ingest_completion(job_id) and notify user on completion. 7) If MCP has no relevant result, report that clearly and ask user whether to fallback to Context7; do not fallback automatically. 8) Final answers must cite source URLs returned by search_documentation."
-      }
+      "args": ["-m", "sive", "serve"]
     }
   }
 }
 ```
 
-Conseils de personnalisation:
+N'ajoutez pas de prompt système à la configuration MCP: le workflow est dans
+la skill. Utilisez `sive install` pour obtenir le format natif du client:
+GitHub utilise `mcpServers` avec `type: local` et `tools: ["*"]`; Codex utilise
+`[mcp_servers.sive]` en TOML; OpenCode v2 utilise `mcp.servers.sive` avec un
+tableau `command`. Les références officielles sont dans le [README](README.md).
 
-- Adaptez le texte du prompt a vos produits cibles en conservant la regle MCP-first.
-- Gardez la regle de mapping explicite `/sive <url>` -> `ingest(url=<url>)`.
-- Gardez le workflow explicite list_indexed_doc_sites -> search_documentation -> ingest_status.
-- Remplacez C:/path/to/your/project par le chemin absolu réel de votre environnement.
-
-Recommandation:
-
-- utilisez le Python du venv du projet plutôt que le Python systeme
-- gardez un chemin absolu stable pour command/cwd
-
-Exemple Windows (venv):
-
-```json
-{
-  "mcpServers": {
-    "sive": {
-      "command": "C:/path/to/your/project/.venv/Scripts/python.exe",
-      "args": ["-m", "sive", "serve"],
-      "cwd": "C:/path/to/your/project"
-    }
-  }
-}
-```
+Utilisez un exécutable absolu stable (Python du venv ou `sive` installé).
 
 ## 7) Auth Hugging Face (optionnel)
 

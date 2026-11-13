@@ -144,16 +144,18 @@ def cmd_install(args: argparse.Namespace) -> None:
             print(f"- {path}")
         return
 
-    written_by_target = install_skill_files_default_locations(args.target)
+    written_by_target = install_skill_files_default_locations(
+        args.target,
+        python_executable=args.python_executable,
+        cwd=args.mcp_cwd,
+    )
     print("Install complete (default locations):")
     for target, paths in written_by_target.items():
         print(f"[{target}]")
         for path in paths:
             print(f"- {path}")
 
-    print(
-        "Note: des fichiers MCP_SERVER.json (ou sive.mcp.json) ont ete installes avec le Python/CWD detectes."
-    )
+    print("Note: skills et configurations MCP natives installes. Rechargez les skills ou redemarrez le client.")
 
 
 def cmd_serve(_args: argparse.Namespace) -> None:
@@ -296,14 +298,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     install = sub.add_parser(
         "install",
-        help="Installer les prompts/skills /sive pour differents clients LLM",
-        description="Installe les fichiers de skill/prompt /sive pour Claude, Copilot, GPT et Gemini.",
+        help="Installer la skill SIVE et les configurations MCP natives",
+        description="Installe la skill SIVE pour GitHub Copilot CLI, Claude Code, Codex et OpenCode v2.",
         formatter_class=formatter,
     )
     install.add_argument(
         "--target",
         default="all",
-        choices=["all", "claude", "copilot", "gpt", "gemini", "mistral", "microsoft-cowork"],
+        choices=["all", "github", "claude", "codex", "opencode"],
         help="Client cible a installer.",
     )
     install.add_argument(
@@ -319,7 +321,7 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument(
         "--mcp-cwd",
         default=None,
-        help="CWD a ecrire dans la config MCP (par defaut: dossier de l'executable configure).",
+        help="CWD MCP sauf Claude Code, qui ne supporte pas ce champ (defaut: dossier de l'executable).",
     )
     install.set_defaults(func=cmd_install)
 

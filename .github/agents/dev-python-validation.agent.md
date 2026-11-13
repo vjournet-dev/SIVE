@@ -16,19 +16,21 @@ Your job is to validate the application end-to-end in a fully sequential way. Yo
 3. Validate install-generated skill/config artifacts using the CLI command:
    - Run: `python -m sive install --target all --output-dir <temp_dir>`.
    - Verify generated files exist:
-     - `sive.skill.md`
-     - `copilot-instructions.md`
-     - `claude-system-prompt.txt`
-     - `gpt-system-prompt.txt`
-     - `gemini-system-prompt.txt`
+     - `sive/SKILL.md`
+     - `github.mcp.json`
      - `claude.mcp.json`
-     - `copilot.mcp.json`
-     - `gpt.mcp.json`
-     - `gemini.mcp.json`
-   - Validate each `*.mcp.json` is valid JSON and contains `mcpServers.sive.command`, `args`, and `cwd`.
-   - Verify `copilot-instructions.md` mentions:
-     - `/sive add <url | nom>`, `/sive list`, `/sive remove <doc_id>`, `/sive help`
+     - `codex.mcp.toml`
+     - `opencode.mcp.json`
+   - Validate the native formats: GitHub `mcpServers.sive` with `type: local` and `tools: ["*"]`;
+     Claude `mcpServers.sive` with `type: stdio` and no `cwd`; Codex TOML `[mcp_servers.sive]`;
+     OpenCode v2 `mcp.servers.sive` with an array `command`.
+   - Verify no system prompt or global instruction file is generated.
+   - Verify `sive/SKILL.md` has `name` and `description` YAML frontmatter and mentions:
+     - Documentation-dependent tasks as automatic triggers, not just slash commands
+     - `/sive add`, `/sive update`, `/sive list`, `/sive remove`, `/sive help`
      - `list_documentation_sites_in_database(include_active=True)`
+     - Discovery first, then concept-specific `search_documentation` and citations
+     - SIVE CLI ingestion fallback without inventing standalone CLI search
      - `delete_documentation_site(site_id=<doc_id>, delete_raw_files=True)`
      - URL suggestion confirmation flow (`needs_confirmation`)
 4. Run static validation in this exact order:

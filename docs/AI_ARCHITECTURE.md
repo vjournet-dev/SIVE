@@ -53,7 +53,7 @@ Domain ownership:
    - Authentication session capture and authenticated browser crawl flow.
 
 - `domain/client_install/*`
-   - Skill/client MCP installation and prompt/config generation.
+   - Discoverable Agent Skills and native client MCP configuration installation.
 
 Infrastructure ownership:
 
@@ -382,114 +382,70 @@ Validation script mapping:
 - `scripts/e2e_runtime_validate_robust.py` -> `src/sive/validation/e2e/runtime_validate_robust.py`
 - `scripts/benchmark_rerank.py` -> `src/sive/validation/benchmark/rerank.py`
 
-## 10. Skill Installation Service (New JSON-driven model)
+## 10. Skill Installation Service
 
-The skill installation service is now configuration-driven.
+Implementation and ownership:
 
-Implementation files:
+- `src/sive/domain/client_install/service.py`: rendering, client-native config generation and installation.
+- `src/sive/domain/client_install/skill_templates.json`: shared skill content and target mappings.
+- `src/sive/__main__.py`: CLI argument adaptation only.
 
-- Loader and install logic: `src/sive/domain/client_install/service.py`
-- Source-of-truth templates and target mapping: `src/sive/domain/client_install/skill_templates.json`
+### 10.1 Supported targets and discovery
 
-### 10.1 Design goals
+Only `github`, `claude`, `codex`, and `opencode` are supported; `all` selects these four.
+Every target installs the same Agent Skills `sive/SKILL.md` with `name` and `description`
+frontmatter. No system prompts or global instruction files are generated.
 
-1. Modifying a skill text must require only JSON changes.
-2. Adding a new LLM target must require only JSON changes.
-3. Python logic should remain generic and stable.
+| Target | Personal skill | User MCP config | Native format |
+| --- | --- | --- | --- |
+| GitHub Copilot CLI (`github`) | `~/.copilot/skills/sive/SKILL.md` | `~/.copilot/mcp-config.json` | `mcpServers.sive`, `type: local`, `tools: ["*"]` |
+| Claude Code (`claude`) | `~/.claude/skills/sive/SKILL.md` | `~/.claude.json` | `mcpServers.sive`, `type: stdio`, no `cwd` |
+| Codex (`codex`) | `~/.agents/skills/sive/SKILL.md` | `~/.codex/config.toml` | `[mcp_servers.sive]`, `command`, `args`, `cwd` |
+| OpenCode v2 (`opencode`) | `~/.config/opencode/skills/sive/SKILL.md` | `~/.config/opencode/opencode.json(c)` | `mcp.servers.sive`, `type: local`, command array, `cwd` |
 
-### 10.2 JSON schema-by-convention
+Clients discover the description and load the body when relevant. Skill selection and
+permissions remain client-controlled; installation does not guarantee permanent injection.
+The skill follows discovery-then-query: inventory sources, select relevant identifiers,
+search one concept per query, read results, cite sources, and offer scoped ingestion when
+relevant documentation is missing. The CLI fallback supports ingestion, not standalone
+search; retrieval still requires a connection to `sive serve`.
 
-Top-level keys in `skill_templates.json`:
+### 10.2 Template contract
 
-- `shared_texts`: reusable text blocks.
-- `common_render_files`: files rendered for every target.
-- `targets`: target-specific definitions keyed by target id (for example `copilot`, `claude`, `gpt`, `gemini`).
+Top-level keys:
 
-Each target definition includes:
+- `shared_texts`: reusable text blocks (`ref`, `lines`, `text`, or direct strings).
+- `common_render_files`: shared exported skill files.
+- `targets`: only the four supported target identifiers.
 
-- `render_files`: output file name -> text spec.
-- `default_install_files`: install path -> source reference or special handler.
+Each target defines:
 
-Text specs accepted by the loader:
+- `mcp_format`: selects its native config serializer.
+- `mcp_output_file`: exported JSON or TOML snippet name.
+- `default_install_files`: native user paths mapped to a rendered `source` or
+  `special: "mcp_config"`.
+- Optional `render_files`: additional rendered content.
 
-- string: direct text value
-- object with `ref`: reference to `shared_texts`
-- object with `lines`: list of lines joined with `\n`
-- object with `text`: explicit text payload
+Skill text changes require only JSON edits. Native format changes belong in the service,
+not in CLI or MCP server assembly.
 
-Special install handler:
+### 10.3 Installation behavior
 
-- `special: "mcp_config"` instructs the service to generate MCP server config JSON instead of using a rendered text file.
+`render_skill_files` returns the rendered files; `install_skill_files` exports them with
+their directory structure. `install_client_mcp_configs` exports native config snippets.
+Explicit output directories do not configure clients.
 
-### 10.3 Runtime behavior
+`install_skill_files_default_locations` resolves `sive serve` or a Python module fallback,
+applies explicit Python/cwd overrides, validates existing configurations before writing,
+and merges only the SIVE server into native files. Other servers and settings are retained.
+TOML is parsed/updated using `tomlkit` to preserve comments and unrelated sections.
+Existing OpenCode JSONC is parsed using `json5` and rewritten as valid JSON in the same
+file; its settings are preserved but comments are not. Invalid configs raise explicit errors
+without being overwritten. No legacy user files are deleted automatically.
 
-`render_skill_files(target)`:
+### 10.4 Validation
 
-1. Loads templates from JSON.
-2. Resolves selected targets (`all` = all keys in `targets`).
-3. Merges common + target-specific rendered files.
-4. Returns a `dict[file_name, content]`.
-
-`install_skill_files(target, output_dir)`:
-
-1. Calls `render_skill_files(target)`.
-2. Writes rendered files into `output_dir`.
-
-`install_skill_files_default_locations(target, ...)`:
-
-1. Resolves executable command (`sive` candidates or `python -m sive serve`).
-2. Builds shared `MCP_SERVER.json` payload.
-3. For each selected target, applies `default_install_files` from JSON.
-4. Writes either rendered content (`source`) or generated MCP config (`special: mcp_config`).
-
-`install_client_mcp_configs(target, output_dir, ...)`:
-
-1. Uses target selection from JSON.
-2. Writes `<target>.mcp.json` for each selected target.
-
-### 10.4 How to add a new LLM target (JSON-only)
-
-Add a new key under `targets` in `skill_templates.json`, for example `mistral`:
-
-1. Add `render_files` entries for prompt/instruction files.
-2. Add `default_install_files` mapping for local install paths.
-3. Reuse `shared_texts` via `ref` or define target-specific text.
-
-No Python code changes are required when the new target follows this structure.
-
-### 10.5 Validation checklist for skill install changes
-
-After editing `skill_templates.json`:
-
-1. Run lint on service and relevant tests.
-2. Run `tests/test_skill_install.py`.
-3. Optionally run a local install smoke test:
-   - `sive install`
-
-### 10.6 Concrete example: adding `mistral`
-
-The current configuration already contains a `mistral` target. Use this as a template for future targets:
-
-```json
-{
-   "targets": {
-      "mistral": {
-         "render_files": {
-            "mistral-system-prompt.txt": {
-               "ref": "system_prompt"
-            }
-         },
-         "default_install_files": {
-            ".sive/mistral/SYSTEM_PROMPT.txt": {
-               "source": "mistral-system-prompt.txt"
-            },
-            ".sive/mistral/MCP_SERVER.json": {
-               "special": "mcp_config"
-            }
-         }
-      }
-   }
-}
-```
-
-To add another provider (for example `xai` or `openrouter`), duplicate this structure, change key names and output paths, and keep `special: "mcp_config"` for auto-generated MCP settings.
+- Focused tests: `python -m pytest -q tests/test_skill_install.py`.
+- Required gates: ruff, mypy, and the complete pytest suite.
+- Install smoke tests must use temporary output/home directories, never real user configs.
+- Official format references are linked in README.md; OpenCode's contract targets v2.

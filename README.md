@@ -173,7 +173,7 @@ Avec pip ou uv, un seul exécutable CLI est installé:
 Le package Python s'appelle également `sive` (`python -m sive`).
 Le dépôt officiel est https://github.com/vjournet-dev/SIVE.
 
-### Installer les skills/prompts client `/sive`
+### Installer la skill SIVE et le MCP
 
 Après installation (uv ou pip), exécutez une fois:
 
@@ -181,39 +181,56 @@ Après installation (uv ou pip), exécutez une fois:
 sive install --target all
 ```
 
-Emplacements par défaut:
+Seules les cibles `github`, `claude`, `codex` et `opencode` sont supportées.
+La skill utilise le format Agent Skills: un dossier `sive` avec un `SKILL.md`
+contenant le frontmatter `name` et `description`. Aucun prompt système ni fichier
+d'instructions globales n'est généré.
 
-- Claude: `~/.claude/skills/sive` (`SKILL.md`, `SYSTEM_PROMPT.txt`)
-- Copilot: `~/.copilot/instructions` (`sive.instructions.md`)
-- GPT: `~/.sive/gpt` (`SYSTEM_PROMPT.txt`)
-- Gemini: `~/.sive/gemini` (`SYSTEM_PROMPT.txt`)
-- Microsoft Cowork: `~/OneDrive/Documents/Cowork/skills/sive` (`SKILL.md`, `references/README-COWORK.md`, `references/manifest.json`, `references/MCP_SERVER.json`, `references/color.png`, `references/outline.png`)
+| Cible | Skill personnelle | Configuration MCP native |
+| --- | --- | --- |
+| `github` (GitHub Copilot CLI) | `~/.copilot/skills/sive/SKILL.md` | `~/.copilot/mcp-config.json` |
+| `claude` (Claude Code) | `~/.claude/skills/sive/SKILL.md` | `~/.claude.json` |
+| `codex` | `~/.agents/skills/sive/SKILL.md` | `~/.codex/config.toml` |
+| `opencode` (v2) | `~/.config/opencode/skills/sive/SKILL.md` | `~/.config/opencode/opencode.json` |
+
+Les configurations existantes sont fusionnées: les autres serveurs et réglages
+sont conservés. Le TOML conserve ses commentaires; un fichier OpenCode
+`opencode.jsonc` existant est mis à jour plutôt que masqué par un nouveau JSON
+(ses réglages sont conservés, mais ses commentaires sont retirés).
+Une configuration invalide est signalée sans être écrasée.
+Les anciens prompts installés ne sont pas supprimés automatiquement: retirez-les
+des profils clients si vous les aviez activés.
 
 Override possible vers un dossier explicite:
 
 ```bash
-sive install --target copilot --output-dir ./out/prompts
+sive install --target github --output-dir ./out/skills
 ```
 
 Important: ni uv ni pip ne permettent d'executer automatiquement un hook post-install portable pour configurer tous les clients LLM. Lancez donc `sive install` une fois après installation.
 
-La commande `sive install` installé maintenant aussi des fichiers de configuration MCP client (avec le Python/cwd détectés automatiquement):
+Avec `--output-dir`, la commande exporte `sive/SKILL.md` et les snippets natifs:
+`github.mcp.json`, `claude.mcp.json`, `codex.mcp.toml`, `opencode.mcp.json`
+selon les cibles choisies. Cet export n'active pas les clients.
 
-- Claude: `MCP_SERVER.json`
-- Copilot: `sive.mcp.json`
-- GPT/Gemini: `MCP_SERVER.json`
-
-Pour Microsoft Cowork, l'installation écrit la skill dans le dossier OneDrive recommandé par la documentation Cowork (`~/OneDrive/Documents/Cowork/skills/sive/`). Elle copie aussi des ressources de référence (`README-COWORK.md`, `manifest.json`, `MCP_SERVER.json`) ainsi que `color.png` et `outline.png`.
-
-Important pour Cowork: le fichier `MCP_SERVER.json` copié est un artefact de configuration locale (command/cwd) utile comme référence, mais Copilot Cowork n'exécute pas un serveur MCP local `stdio` directement. Pour un appel d'outils effectif dans Cowork, il faut un connecteur MCP distant en HTTPS déclaré dans le manifeste de plugin (`agentConnectors.remoteMcpServer`).
-
-Par défaut, la config MCP générée utilisé l'exécutable installé `sive` (par exemple dans `~/.local/bin` ou le dossier `Scripts`) avec `serve` comme argument. Le `cwd` par défaut est le dossier de cet exécutable.
+Par défaut, le MCP lance l'exécutable `sive` détecté avec `serve`, ou le Python
+courant avec `-m sive serve`. Le `cwd` est le dossier de l'exécutable, sauf pour
+Claude Code dont la configuration stdio ne supporte pas ce champ.
 
 Vous pouvez surcharger les valeurs ecrites dans la config MCP:
 
 ```bash
-sive install --target all --python-exécutable "C:/path/to/python.exe" --mcp-cwd "C:/path/to/project"
+sive install --target all --python-executable "C:/path/to/python.exe" --mcp-cwd "C:/path/to/project"
 ```
+
+Rechargez les skills ou redémarrez le client après installation. Leur description
+les rend disponibles pour les questions documentaires sans commande explicite:
+lister les sources pertinentes, rechercher un concept précis, lire les extraits,
+puis répondre ou coder avec citations. Si une documentation pertinente manque,
+la skill propose son ingestion dans SIVE, confirme le périmètre, attend la fin
+et relance la recherche. Le CLI sert à l'ingestion si le MCP est indisponible;
+il n'expose pas de commande autonome de recherche. La sélection et les permissions
+des skills restent gérées par le client: ce n'est pas une injection permanente.
 
 ## Utilisation
 
@@ -484,7 +501,9 @@ Le client MCP doit pointer vers le Python du virtual environment (et non le Pyth
 
 Le slash command est toujours gere par le client (pas par le serveur MCP). Le mapping cible doit appeler les tools MCP appropries.
 
-Important: aucune installation pip ne peut imposer automatiquement un slash command global pour tous les LLM. Chaque client (Claude, GitHub Copilot, GPT, Gemini, etc.) doit être configure explicitement pour mapper `/sive add|list|remove|help`.
+Important: aucune installation pip ne peut imposer automatiquement un slash command global.
+`sive install` déploie une skill découvrable pour GitHub Copilot CLI, Claude Code,
+Codex et OpenCode v2; l'invocation explicite dépend du client.
 
 Comportement attendu du client:
 
@@ -493,8 +512,8 @@ Comportement attendu du client:
 - `/sive remove fastapi` -> appel MCP `delete_documentation_site(site_id="fastapi", delete_raw_files=True)`
 - `/sive help` -> afficher l'aide des commandes (sans mutation)
 
-Si votre client supporté des commandes slash personnalisees, configurez une commande `sive` qui route les sous-commandes vers les tools ci-dessus.
-Si votre client ne supporté pas de slash natif, ajoutez une regle d'orchestration explicite dans ses instructions (exemple dans `MCP_SYSTEM_PROMPT` ci-dessous).
+Chargez la skill `sive` avec le mécanisme du client. Elle contient le mapping
+`/sive add|update|list|remove|help`, sans prompt système supplémentaire.
 
 ### Test rapide client pour `/sive`
 
@@ -516,55 +535,35 @@ Après configuration du mapping, validez ces scenarios dans le chat client:
   - appeler `ingest_status(job_id)` puis `wait_for_ingest_completion(job_id)` si besoin
   - attendu: progression puis statut final (`succeeded` ou `failed`)
 
-### Configuration de base
+### Configuration de base (Claude Code, scope utilisateur)
 
 ```json
 {
   "mcpServers": {
     "sive": {
-      "command": "c:/Users/$user$/Workspace/SIVE/.venv/Scripts/python.exe",
-      "args": ["-m", "sive", "serve"],
-      "cwd": "c:/Users/$user$/Workspace/SIVE"
+      "type": "stdio",
+      "command": "C:/path/to/SIVE/.venv/Scripts/python.exe",
+      "args": ["-m", "sive", "serve"]
     }
   }
 }
 ```
 
-### Configuration avec instructions (Recommandé - Claude Desktop)
+Utilisez `sive install` pour produire le format exact du client plutôt que copier
+un JSON universel. GitHub utilise `mcpServers` avec `type: local` et `tools: ["*"]`;
+Codex utilise `[mcp_servers.sive]` en TOML; OpenCode v2 utilise
+`mcp.servers.sive` avec `command` sous forme de tableau (une ancienne entrée
+dépréciée `mcp.sive` est migrée automatiquement).
 
-Pour que l'orchestrateur d'IA invoque **automatiquement** la recherche documentaire, ajoutez une instruction système :
-
-Important:
-- `MCP_SYSTEM_PROMPT` est une variable d'environnement transmise au processus MCP.
-- Cette variable **ne force pas a elle seule** la politique d'orchestration du client IA.
-- Pour imposer MCP-first, configurez les instructions du profil/assistant dans le client IA et désactivez Context7 (ou tout connecteur concurrent) pour ce profil/workspace.
-
-```json
-{
-  "mcpServers": {
-    "sive": {
-      "command": "c:/Users/$user$/Workspace/SIVE/.venv/Scripts/python.exe",
-      "args": ["-m", "sive", "serve"],
-      "cwd": "c:/Users/$user$/Workspace/SIVE",
-      "env": {
-        "HF_TOKEN": "hf_xxx",
-        "MCP_SYSTEM_PROMPT": "HARD RULES: 1) sive is the ONLY allowed connector for project documentation retrieval while available. 2) NEVER call Context7 (or any other doc connector) before attempting sive. 3) Before searching docs, call list_documentation_sites_in_database(include_active=True); then call search_documentation(query, topic=..., site_id=... when known). 4) Slash mapping rules: /sive add <arg> -> ingest(url=<arg>), /sive list -> list_documentation_sites_in_database(include_active=True), /sive remove <doc_id> -> delete_documentation_site(site_id=<doc_id>, delete_raw_files=True), /sive help -> help only. 5) If ingest returns multiple suggestions or needs_confirmation, ask the user which URL to use; do not choose automatically. 6) After ingestion starts, either (A) poll ingest_status(job_id) to show progress_percent/phase, or (B) call wait_for_ingest_completion(job_id) and notify user on completion. 7) If MCP has no relevant result, report that clearly and ask user whether to fallback to Context7; do not fallback automatically. 8) Final answers must cite source URLs returned by search_documentation."
-      }
-    }
-  }
-}
-```
-
-**À personnaliser :**
-- Adaptez le texte du prompt a vos produits cibles et conservez la regle `MCP-first` (MCP d'abord, memoire ensuite)
-- Gardez des regles de mapping explicites pour `/sive add|list|remove|help`
-- Gardez le workflow explicite `list_indexed_doc_sites -> search_documentation -> ingest_status` pour les cas de mise à jour en cours
-- Si votre client le permet, désactivez Context7 (ou mettez ce MCP en priorité stricte) pour éviter un routage hors de votre index.
-- Optionnel: ajoutez `HF_TOKEN` (ou `HUGGINGFACE_HUB_TOKEN`) si votre environnement nécessite une auth Hub
-- Remplacez `$user$` par votre nom d'utilisateur Windows
-- Le chemin absolu vers `.venv/Scripts/python.exe` évite d'avoir à activer le venv manuellement
-
-**Impact :** L'orchestrateur comprendra exactement quelles documentations sont disponibles et cherchera en priorité dans votre MCP plutôt que dans sa mémoire d'entraînement.
+Formats vérifiés dans les documentations officielles:
+[GitHub skills](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills),
+[GitHub MCP](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers),
+[Claude skills](https://code.claude.com/docs/en/skills),
+[Claude MCP](https://code.claude.com/docs/en/mcp),
+[Codex skills](https://developers.openai.com/codex/skills),
+[Codex MCP](https://developers.openai.com/codex/mcp),
+[OpenCode skills](https://opencode.ai/docs/skills/),
+[OpenCode MCP](https://opencode.ai/docs/mcp-servers/).
 
 ## Packaging et Distribution
 
@@ -702,7 +701,8 @@ python -m sive serve --help
 
 ## Auto-invocation par l'orchestrateur IA
 
-Les descriptions des tools sont conçues pour que l'orchestrateur d'IA (Claude, ChatGPT, etc.) **invoque naturellement et automatiquement** le MCP sans que l'utilisateur doive le demander explicitement.
+La skill SIVE et les descriptions des tools orientent l'agent vers les sources
+indexées quand de la documentation est pertinente pour la tâche.
 
 ### Mécanisme d'auto-invocation
 
@@ -712,18 +712,19 @@ Les descriptions des tools sont conçues pour que l'orchestrateur d'IA (Claude, 
 - Elles expliquent pourquoi utiliser le tool est indispensable (évite hallucinations, info à jour, source URLs)
 - Elles détaillent le workflow correct (lister sites -> chercher doc)
 
-**Au niveau de la config client (instructions système):**
-- L'env var `MCP_SYSTEM_PROMPT` ou des instructions dans le client (Claude Desktop, etc.) informent l'orchestrateur
-- Listez **les noms exacts des documentations indexées** pour maximiser la pertinence
-- L'orchestrateur recoit une instruction imperative: MCP d'abord, memoire ensuite seulement en fallback
+**Au niveau de la skill client:**
+- Le client découvre le frontmatter et charge `SKILL.md` lorsque pertinent.
+- La skill demande d'abord l'inventaire, puis des recherches ciblées par source.
+- Les extraits documentaires enrichissent le contexte avant la réponse ou le code.
+- Aucune variable de prompt système ne pilote cette orchestration.
 
 ### Exemple de workflow
 
 User: "Comment configurer FastAPI ?"
 
--> Orchestrateur lit la config MCP et voit : "You have access to indexed documentation for: FastAPI, ..."
+-> Le client charge la skill SIVE pour cette question de configuration.
 
--> Orchestrateur appelle `list_indexed_doc_sites()` -> voir que FastAPI est disponible
+-> Orchestrateur appelle `list_documentation_sites_in_database(include_active=True)` pour identifier FastAPI
 
 -> Orchestrateur appelle `search_documentation("FastAPI configuration", site_id="fastapi")`
 
