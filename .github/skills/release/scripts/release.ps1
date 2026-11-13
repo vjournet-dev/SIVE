@@ -180,7 +180,6 @@ if ($Version -notmatch $versionPattern) {
 }
 
 Require-Command git
-Require-Command gh
 $script:PythonCommand = Resolve-PythonCommand
 if (-not (Test-Path $script:PythonCommand) -and -not (Get-Command $script:PythonCommand -ErrorAction SilentlyContinue)) {
     throw "Required command '$script:PythonCommand' was not found in PATH."
@@ -234,7 +233,17 @@ Invoke-Python -CommandArgs @("-m", "build")
 Write-Step "Committing and tagging release"
 Invoke-Git -CommandArgs @("add", "pyproject.toml")
 Invoke-Git -CommandArgs @("add", "-f", "src/sive.egg-info/PKG-INFO")
-Invoke-Git -CommandArgs @("commit", "-m", "chore(release): v$Version")
+$stagedRaw = & git diff --cached --name-only
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect staged changes."
+}
+$staged = Normalize-CommandOutput -Value $stagedRaw
+if (-not [string]::IsNullOrWhiteSpace($staged)) {
+    Invoke-Git -CommandArgs @("commit", "-m", "chore(release): v$Version")
+}
+else {
+    Write-Step "No version changes to commit (already at $Version)"
+}
 
 Invoke-Git -CommandArgs @("tag", "-a", $tag, "-m", $tag)
 
