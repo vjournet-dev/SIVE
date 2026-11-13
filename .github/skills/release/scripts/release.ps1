@@ -219,8 +219,10 @@ Write-Step "Bumping version in pyproject.toml and PKG-INFO"
 Replace-Single -Path "pyproject.toml" -Pattern '^version\s*=\s*"[^"]+"\s*$' -Replacement "version = `"$Version`""
 Replace-Single -Path "src/sive.egg-info/PKG-INFO" -Pattern '^Version:\s*.+$' -Replacement "Version: $Version"
 
-Write-Step "Ensuring build and twine modules are available"
-Invoke-Python -CommandArgs @("-m", "pip", "install", "--disable-pip-version-check", "--quiet", "build", "twine")
+if (-not $SkipPublish) {
+    Write-Step "Ensuring build and twine modules are available"
+    Invoke-Python -CommandArgs @("-m", "pip", "install", "--disable-pip-version-check", "--quiet", "build", "twine")
+}
 
 Write-Step "Cleaning dist directory"
 if (Test-Path "dist") {
