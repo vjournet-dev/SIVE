@@ -6,6 +6,7 @@ __pycache__/
 
 # Generated artifacts
 data/
+tmp/
 
 # Build and distribution
 build/
