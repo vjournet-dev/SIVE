@@ -1,0 +1,28 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.28/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.28",
+  "version": "1.0.0",
+  "id": "00000000-0000-0000-0000-000000000000",
+  "developer": {
+    "name": "sive",
+    "websiteUrl": "https://github.com/vjournet-dev/SIVE",
+    "privacyUrl": "https://github.com/vjournet-dev/SIVE",
+    "termsOfUseUrl": "https://github.com/vjournet-dev/SIVE"
+  },
+  "name": {
+    "short": "SIVE",
+    "full": "SIVE Skill Pack for Copilot Cowork"
+  },
+  "description": {
+    "short": "Ingest and search technical documentation through MCP",
+    "full": "Provides a documentation ingestion and retrieval skill for Copilot Cowork using sive."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#2B579A",
+  "agentSkills": [
+    { "folder": "./skills/sive" }
+  ]
+}

@@ -1,0 +1,6 @@
+include DEPLOYMENT.md
+include LICENSE
+include pyproject.toml
+recursive-include src *.py
+recursive-include src *.json
+recursive-include src *.png

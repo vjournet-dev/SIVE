@@ -1,0 +1,72 @@
+{
+  "name": "rerank-format-baseline",
+  "description": "Small deterministic benchmark dataset for format-aware reranking.",
+  "cases": [
+    {
+      "id": "tabular-columns",
+      "query": "excel table columns",
+      "expected_top_source_kind": "xlsx",
+      "docs": ["general guide", "spreadsheet data"],
+      "metas": [
+        {"source_kind": "html", "title": "Guide", "section_heading": "Reference"},
+        {"source_kind": "xlsx", "title": "report.xlsx", "section_heading": "Users / Row 1"}
+      ],
+      "distances": [0.12, 0.2]
+    },
+    {
+      "id": "tabular-summary",
+      "query": "how many columns in this sheet",
+      "expected_top_source_kind": "csv",
+      "docs": ["rows", "summary"],
+      "metas": [
+        {"source_kind": "csv", "title": "users.csv", "section_heading": "Users / Row 1"},
+        {"source_kind": "csv", "title": "users.csv", "section_heading": "Users / Summary"}
+      ],
+      "distances": [0.1, 0.18]
+    },
+    {
+      "id": "pdf-page-query",
+      "query": "which page explains architecture",
+      "expected_top_source_kind": "pdf",
+      "docs": ["web intro", "pdf chapter excerpt"],
+      "metas": [
+        {"source_kind": "html", "title": "Docs", "section_heading": "Overview"},
+        {"source_kind": "pdf", "title": "manual.pdf", "section_heading": "Page 12"}
+      ],
+      "distances": [0.11, 0.18]
+    },
+    {
+      "id": "markdown-code",
+      "query": "python api example",
+      "expected_top_source_kind": "markdown",
+      "docs": ["overview", "code snippet"],
+      "metas": [
+        {"source_kind": "markdown", "title": "Guide", "section_heading": "Overview", "section_level": 1, "has_code_block": false, "has_link_target": false},
+        {"source_kind": "markdown", "title": "Guide", "section_heading": "API Example", "section_level": 3, "has_code_block": true, "has_link_target": false}
+      ],
+      "distances": [0.1, 0.2]
+    },
+    {
+      "id": "json-schema",
+      "query": "json schema fields",
+      "expected_top_source_kind": "json",
+      "docs": ["plain html", "json config"],
+      "metas": [
+        {"source_kind": "html", "title": "Guide", "section_heading": "Reference"},
+        {"source_kind": "json", "title": "config.json", "section_heading": "Schema"}
+      ],
+      "distances": [0.1, 0.18]
+    },
+    {
+      "id": "fallback-unknown",
+      "query": "core configuration",
+      "expected_top_source_kind": "html",
+      "docs": ["html configuration", "unknown blob"],
+      "metas": [
+        {"source_kind": "html", "title": "Configuration", "section_heading": "Configuration"},
+        {"source_kind": "custom", "title": "Blob", "section_heading": "Data"}
+      ],
+      "distances": [0.15, 0.15]
+    }
+  ]
+}

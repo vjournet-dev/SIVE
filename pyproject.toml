@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sive"
+version = "0.9.3"
+description = "SIVE (Scrap Ingest Vectorize Extends): documentation ingestion, vector indexing and MCP retrieval"
+readme = "DEPLOYMENT.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Valentin JOURNET", email = "valentin.journet@talan.com"}
+]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["mcp", "documentation", "vector-search", "rag", "chromadb", "web-scraper"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Internet :: WWW/HTTP",
+]
+dependencies = [
+    "beautifulsoup4==4.15.0",
+    "chromadb==1.5.9",
+    "ddgs==9.14.4",
+    "httpx==0.28.1",
+    "lxml==6.1.1",
+    "mcp==2.0.0",
+    "openpyxl==3.1.5",
+    "playwright==1.61.0",
+    "pypdf==6.14.2",
+    "python-docx==1.2.0",
+    "sentence-transformers==5.6.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "black==26.5.1",
+    "ruff==0.16.0",
+    "mypy==2.3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/vjournet-dev/SIVE"
+Repository = "https://github.com/vjournet-dev/SIVE"
+Issues = "https://github.com/vjournet-dev/SIVE/issues"
+Documentation = "https://github.com/vjournet-dev/SIVE#readme"
+
+[project.scripts]
+sive = "sive.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.package-data]
+sive = [
+    "domain/client_install/*.json",
+    "domain/client_install/assets/**/*.png",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:.*asyncio.iscoroutinefunction.*:DeprecationWarning:chromadb.telemetry.opentelemetry",
+]
+

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sive": {
+      "command": "C:\\Users\\ValentinJOURNET\\Workspace\\sive\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "sive",
+        "serve"
+      ],
+      "cwd": "C:\\Users\\ValentinJOURNET\\Workspace\\sive\\.venv\\Scripts"
+    }
+  }
+}

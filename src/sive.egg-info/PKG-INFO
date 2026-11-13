@@ -1,0 +1,431 @@
+Metadata-Version: 2.4
+Name: sive
+Version: 0.9.3
+Summary: SIVE (Scrap Ingest Vectorize Extends): documentation ingestion, vector indexing and MCP retrieval
+Author-email: Valentin JOURNET <valentin.journet@talan.com>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/vjournet-dev/SIVE
+Project-URL: Repository, https://github.com/vjournet-dev/SIVE
+Project-URL: Issues, https://github.com/vjournet-dev/SIVE/issues
+Project-URL: Documentation, https://github.com/vjournet-dev/SIVE#readme
+Keywords: mcp,documentation,vector-search,rag,chromadb,web-scraper
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Internet :: WWW/HTTP
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: beautifulsoup4==4.15.0
+Requires-Dist: chromadb==1.5.9
+Requires-Dist: ddgs==9.14.4
+Requires-Dist: httpx==0.28.1
+Requires-Dist: lxml==6.1.1
+Requires-Dist: mcp==2.0.0
+Requires-Dist: openpyxl==3.1.5
+Requires-Dist: playwright==1.61.0
+Requires-Dist: pypdf==6.14.2
+Requires-Dist: python-docx==1.2.0
+Requires-Dist: sentence-transformers==5.6.1
+Provides-Extra: dev
+Requires-Dist: pytest==9.1.1; extra == "dev"
+Requires-Dist: black==26.5.1; extra == "dev"
+Requires-Dist: ruff==0.16.0; extra == "dev"
+Requires-Dist: mypy==2.3.0; extra == "dev"
+Dynamic: license-file
+
+# Déploiement Utilisateur - SIVE (Scrap Ingest Vectorize Extends)
+
+Ce guide est pensé pour un utilisateur qui veut:
+
+- installer l outil via pip
+- le brancher comme serveur MCP dans son projet
+- ingester une documentation sans config complexe
+- utiliser la recherche de documentation depuis son assistant
+
+## Positionnement du service
+
+Ce service est adapté à l'indexation de données peu évolutives
+(documentations, référentiels, contenus stables).
+
+Il n'est pas destiné à l'indexation de données qui évoluent régulièrement
+ou en continu. Pour ce type de données, il faut privilégier un pipeline
+de synchronisation plus fréquente et une architecture de traitement dédiée.
+
+## 1) Prérequis
+
+- Python 3.11+
+- pip
+- un client MCP (Claude Desktop, VS Code MCP, etc.)
+
+## 2) Installation (uv recommandé)
+
+### Option A - installation globale avec uv (recommandé)
+
+```bash
+uv tool install sive
+sive --help
+```
+
+Pour afficher le dossier d'installation des exécutables:
+
+```bash
+uv tool dir
+```
+
+Si la commande n'est pas visible, ajoutez ce dossier a votre `PATH`.
+
+### Option B - installation projet avec uv
+
+```bash
+uv venv
+uv pip install -e .
+```
+
+### Option C - installation via pip (fallback)
+
+Installez le package dans votre environnement projet (venv recommandé):
+
+```bash
+pip install sive
+```
+
+Pour installer la commande dans `~/.local/bin` (Linux/macOS):
+
+```bash
+python -m pip install --user sive
+export PATH="$HOME/.local/bin:$PATH"
+sive --help
+```
+
+Important:
+
+- Le package ne peut pas forcer le répertoire d'installation des exécutables.
+- C'est `pip` (et son mode `--user`/venv/systeme) qui décide la destination.
+- Si `sive` n'est pas trouvé, vérifiez que le dossier cible est dans votre `PATH`.
+
+Verifiez l'installation:
+
+```bash
+python -m sive --help
+sive --help
+```
+
+L'installation avec pip ou `uv tool install` expose une seule commande: `sive`.
+Le dépôt officiel est https://github.com/vjournet-dev/SIVE.
+
+### Installer les skills/prompts client `/sive`
+
+Après installation, exécutez une fois:
+
+```bash
+sive install --target all
+```
+
+Emplacements par défaut utilisés:
+
+- Claude: `~/.claude/skills/sive` (`SKILL.md`, `SYSTEM_PROMPT.txt`)
+- Copilot: `~/.copilot/instructions` (`sive.instructions.md`)
+- GPT: `~/.sive/gpt` (`SYSTEM_PROMPT.txt`)
+- Gemini: `~/.sive/gemini` (`SYSTEM_PROMPT.txt`)
+- Microsoft Cowork: `~/OneDrive/Documents/Cowork/skills/sive` (`SKILL.md`, `references/README-COWORK.md`, `references/manifest.json`, `references/MCP_SERVER.json`, `references/color.png`, `references/outline.png`)
+
+Vous pouvez forcer un dossier de sortie explicite:
+
+```bash
+sive install --target gpt --output-dir ./out/prompts
+```
+
+Important: uv/pip ne peuvent pas executer un hook post-install universel pour configurer les clients LLM. Cette commande doit être lancee manuellement une fois après installation.
+
+La commande `sive install` ecrit aussi des fichiers de configuration MCP client avec le Python et le `cwd` détectés automatiquement:
+
+- Claude: `MCP_SERVER.json`
+- Copilot: `sive.mcp.json`
+- GPT/Gemini: `MCP_SERVER.json`
+
+Pour Microsoft Cowork, la cible installe par défaut la skill dans le dossier OneDrive recommandé (`~/OneDrive/Documents/Cowork/skills/sive/`) et copie automatiquement `MCP_SERVER.json`, `color.png` (192x192) et `outline.png` (32x32) dans `references/`.
+
+Important: dans Cowork, un MCP local `stdio` (command/cwd) n'est pas exécuté directement. Le fichier `MCP_SERVER.json` sert de référence de config locale; pour des tools MCP opérationnels dans Cowork, publiez un connecteur MCP distant HTTPS et déclarez-le dans le manifeste plugin (`agentConnectors.remoteMcpServer`).
+
+Par défaut, la config MCP générée utilisé l'exécutable installé `sive` (par exemple dans `~/.local/bin` ou le dossier `Scripts`) avec `serve` comme argument. Le `cwd` par défaut est le dossier de cet exécutable.
+
+Vous pouvez imposer les valeurs de config MCP:
+
+```bash
+sive install --target all --python-exécutable "C:/path/to/python.exe" --mcp-cwd "C:/path/to/project"
+```
+
+## 3) Lancer le serveur MCP localement
+
+```bash
+python -m sive serve
+```
+
+Le serveur expose les tools MCP suivants:
+
+- list_documentation_sites_in_database(include_active=True)
+- list_indexed_doc_sites()
+- search_documentation(query, top_k=5, site_id=None, site_ids=None, topic=None)
+- suggest_documentation_urls(topic, max_results=5)
+- ingest(url, incremental=True, max_pages=1200, delay=0.2, additional_urls=None, allowed_url_prefixes=None, site_id=None, site_name=None)
+- update_site_differential(site_id, max_pages=1200, delay=0.2)
+- ingest_and_register_topic(topic, url, incremental=True, max_pages=1200, delay=0.2)
+- get_site_sync_status(site_id)
+- list_site_sync_status(sort_by="staleness", descending=True, limit=100)
+- ingest_status(job_id)
+- wait_for_ingest_completion(job_id, poll_interval_seconds=2.0, timeout_seconds=600.0)
+- delete_documentation_site(site_id, delete_raw_files=True)
+
+## 4) Workflow recommandé (nouveau)
+
+### Cas A - l utilisateur utilisé les commandes /sive
+
+Le client peut exposer les commandes suivantes:
+
+- /sive add <url | nom>
+- /sive list
+- /sive remove <doc_id>
+- /sive help
+
+Comportement recommandé:
+
+- /sive add <url | nom> -> appeler ingest(url=<argument>)
+- si ingest retourne plusieurs suggestions (ou needs_confirmation), demander confirmation utilisateur avant de relancer ingest(url=<url_choisie>)
+- /sive list -> appeler list_documentation_sites_in_database(include_active=True)
+- /sive remove <doc_id> -> appeler delete_documentation_site(site_id=<doc_id>, delete_raw_files=True)
+
+1. Appeler ingest(url=<argument utilisateur ou URL confirmée>).
+2. Suivre le job avec une des deux options:
+  - polling: ingest_status(job_id) pour afficher la progression (progress_percent, phase, visited_urls, pages_kept, queued_urls)
+  - attente bloquante: wait_for_ingest_completion(job_id) pour être notifié quand le job finit
+3. Rechercher ensuite avec search_documentation(..., topic=...).
+
+Les résultats de recherche MCP incluent maintenant aussi:
+
+- `Source Kind` pour identifier le type de source (`csv`, `xlsx`, `json`, `pdf`, `docx`, etc.)
+- `Section Type` pour qualifier le chunk (`summary`, `columns`, `row`, `page`, `section`)
+- `Semantic Relevance` pour la similarité vectorielle
+- `Rank Score` pour le classement combine applique par le domaine
+
+Pour comparer plusieurs documentations, utilisez `site_ids=[...]`. Une route de topic peut aussi contenir plusieurs sites: le serveur interroge chaque source, fusionne les candidats et diversifie le résultat final. `site_id` reste disponible pour les clients existants.
+
+Pour les sources tabulaires, cela aide a séparer les questions de structure (colonnes, nombre de lignes, feuille) des questions sur une ligne spécifique.
+
+### Cas B - l utilisateur ne fournit pas d URL
+
+1. Appeler suggest_documentation_urls(topic).
+2. Proposer les suggestions a l utilisateur.
+3. Une fois l URL choisie, appeler ingest(url).
+4. Suivre le job via ingest_status(job_id) ou wait_for_ingest_completion(job_id).
+
+### Cas C - ingestion de fichier local ou distant direct
+
+Le tool ingest accepte aussi:
+
+- un chemin local vers un fichier: .csv, .html, .htm, .md, .markdown, .docx, .json, .pdf, .xlsx
+- un chemin local vers un dossier contenant ces formats
+- une URL distante directe de fichier: .csv, .md, .markdown, .docx, .json, .pdf, .xlsx
+
+### Cas D - plusieurs branches web dans une documentation
+
+Pour crawler plusieurs branches du même host sous un seul `site_id`, appeler `ingest` avec une URL primaire, `additional_urls` et une allowlist explicite `allowed_url_prefixes`. Les préfixes peuvent être des chemins ou des URL absolues du même host. Le serveur rejette les hosts mélangés et toute URL de départ hors allowlist.
+
+Exemple Open XML:
+
+```text
+ingest(
+  url="https://learn.microsoft.com/en-us/office/open-xml/",
+  additional_urls=["https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml"],
+  allowed_url_prefixes=[
+    "https://learn.microsoft.com/en-us/office/open-xml/",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml"
+  ],
+  site_id="openxml",
+  site_name="Open XML"
+)
+```
+
+Pour une source locale, le `site_id`/`doc_id` est dérivé automatiquement du chemin local:
+
+- prefixe lisible base sur le nom du fichier ou du dossier
+- suffixe hash court dérivé du chemin resolu
+- objectif: éviter les collisions si deux dossiers distincts portent le même nom final
+
+Exemples:
+
+- /sive add C:/docs/guide.pdf
+- /sive add C:/docs/my-folder
+- /sive add https://buildmedia.readthedocs.org/media/pdf/pymupdf/latest/pymupdf.pdf
+
+## 5) Garde-fous intégrés (important)
+
+- Les suggestions web visent des pages de depart de documentation (pas des roots generiques quand une meilleure page est detectable).
+- ingest valide l URL avant mise en file:
+  - si la cible retourne HTTP 404, le serveur repond avec un payload explicite
+  - le message demande une URL de premiere page de doc (exemple: .../docs/intro)
+- ingest_and_register_topic reutilise ingest:
+  - si URL invalide (404), la route topic -> site nest pas enregistree
+  - le payload inclut route_registered=false
+
+## 6) Integrer le MCP dans votre projet
+
+### 6.1 Mapping explicite des commandes client `/sive`
+
+Point cle: le slash command est gere par le client. Le serveur expose le tool MCP `ingest` pour demarrer l'ingestion.
+
+Important: l'installation pip ne peut pas enregistrer automatiquement `/sive` pour tous les LLM. Le mapping slash doit être configure client par client (Claude, GitHub Copilot, GPT, Gemini, etc.).
+
+Vous devez configurer le client pour transformer:
+
+- `/sive add <url | nom>` -> `ingest(url="<argument>")`
+- `/sive list` -> `list_documentation_sites_in_database(include_active=True)`
+- `/sive remove <doc_id>` -> `delete_documentation_site(site_id="<doc_id>", delete_raw_files=True)`
+- `/sive help` -> afficher une aide sans mutation MCP
+
+Comportement recommandé côté client:
+
+1. Appeler `ingest(url=...)`.
+2. Recuperer le `job_id` et suivre avec `ingest_status` ou `wait_for_ingest_completion`.
+
+### 6.2 Test rapide des commandes `/sive`
+
+Une fois la regle client en place, validez ces cas:
+
+1. Add URL directe:
+  - `/sive add https://playwright.dev/docs/intro`
+  - attendu: retour avec `job_id`
+2. Add URL invalide:
+  - `/sive add https://playwright.dev/docs`
+  - attendu: `invalid_start_url` avec message explicite et suggestion potentielle
+3. List:
+  - `/sive list`
+  - attendu: liste des sources en base (actives + indexees)
+4. Remove:
+  - `/sive remove <doc_id>`
+  - attendu: suppression source et fichiers bruts associés
+  - note: pour une source locale, récupérer d'abord le `doc_id` exact via `/sive list` (ex: `local-my-folder-1a2b3c4d`)
+5. Suivi:
+  - appeler `ingest_status(job_id)` puis eventuellement `wait_for_ingest_completion(job_id)`
+  - attendu: progression puis statut final
+
+Exemple de configuration MCP (format type mcpServers):
+
+```json
+{
+  "mcpServers": {
+    "sive": {
+      "command": "python",
+      "args": ["-m", "sive", "serve"],
+      "cwd": "C:/path/to/your/project"
+    }
+  }
+}
+```
+
+Configuration avec MCP_SYSTEM_PROMPT (recommandé):
+
+Important:
+
+- MCP_SYSTEM_PROMPT est une variable d environnement transmise au processus MCP.
+- Cette variable ne force pas a elle seule la politique d orchestration du client IA.
+- Pour imposer MCP-first, configurez aussi les instructions du profil assistant dans votre client IA et désactivez les connecteurs concurrents (ex: Context7) pour ce profil/workspace.
+
+```json
+{
+  "mcpServers": {
+    "sive": {
+      "command": "C:/path/to/your/project/.venv/Scripts/python.exe",
+      "args": ["-m", "sive", "serve"],
+      "cwd": "C:/path/to/your/project",
+      "env": {
+        "HF_TOKEN": "hf_xxx",
+        "MCP_SYSTEM_PROMPT": "HARD RULES: 1) sive is the ONLY allowed connector for project documentation retrieval while available. 2) NEVER call Context7 (or any other doc connector) before attempting sive. 3) For any project/API/config/troubleshooting/version question, always execute this sequence first: list_indexed_doc_sites(); search_documentation(query, topic=..., site_id=... when known). 4) Slash mapping rule: when user writes /sive <url>, call ingest(url=<url>) immediately. 5) If user asks to add a new documentation source without /sive: require explicit URL; if missing, call suggest_documentation_urls(topic), présent candidates, get confirmation, then call ingest_and_register_topic(topic, url). 6) After ingestion starts, either (A) poll ingest_status(job_id) to show progress_percent/phase, or (B) call wait_for_ingest_completion(job_id) and notify user on completion. 7) If MCP has no relevant result, report that clearly and ask user whether to fallback to Context7; do not fallback automatically. 8) Final answers must cite source URLs returned by search_documentation."
+      }
+    }
+  }
+}
+```
+
+Conseils de personnalisation:
+
+- Adaptez le texte du prompt a vos produits cibles en conservant la regle MCP-first.
+- Gardez la regle de mapping explicite `/sive <url>` -> `ingest(url=<url>)`.
+- Gardez le workflow explicite list_indexed_doc_sites -> search_documentation -> ingest_status.
+- Remplacez C:/path/to/your/project par le chemin absolu réel de votre environnement.
+
+Recommandation:
+
+- utilisez le Python du venv du projet plutôt que le Python systeme
+- gardez un chemin absolu stable pour command/cwd
+
+Exemple Windows (venv):
+
+```json
+{
+  "mcpServers": {
+    "sive": {
+      "command": "C:/path/to/your/project/.venv/Scripts/python.exe",
+      "args": ["-m", "sive", "serve"],
+      "cwd": "C:/path/to/your/project"
+    }
+  }
+}
+```
+
+## 7) Auth Hugging Face (optionnel)
+
+Si votre environnement exige un token HF pour le modèle d embedding:
+
+```bash
+# Windows PowerShell
+$env:HF_TOKEN = "hf_xxx"
+
+# Linux/macOS
+export HF_TOKEN="hf_xxx"
+```
+
+Variables reconnues:
+
+- HUGGINGFACE_HUB_TOKEN
+- HF_TOKEN
+- HUGGINGFACE_TOKEN
+
+## 8) Verification rapide
+
+1. Demarrer le serveur.
+2. Dans le client MCP, appeler list_indexed_doc_sites().
+3. Si vide, lancer ingest_and_register_topic(topic, url).
+4. Poller ingest_status(job_id).
+  - ou appeler wait_for_ingest_completion(job_id) pour un retour final direct
+5. Rejouer search_documentation(query, topic=...).
+
+## 9) Depannage
+
+### La commande ne fonctionne pas
+
+```bash
+pip install --upgrade sive
+python -m sive --help
+```
+
+### Le MCP ne voit pas le module
+
+Cause fréquente: le client utilisé un autre Python que celui du venv projet.
+
+Solution: configurez command avec le chemin absolu vers .venv/Scripts/python.exe (Windows) ou .venv/bin/python (Linux/macOS).
+
+### Ingestion refusee avec invalid_start_url
+
+Votre URL ne pointe pas vers une page valide de documentation (404).
+
+Solution: utilisez une URL de premiere page de doc (exemple: /docs/intro), ou passez par suggest_documentation_urls(topic).
+
+## 10) Liens utiles
+
+- Guide développeur: DEVELOPMENT.md
+- Vue d ensemble: README.md
