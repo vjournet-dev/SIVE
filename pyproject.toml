@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sive"
-version = "0.9.3"
+version = "1.0.0"
 description = "SIVE (Scrap Ingest Vectorize Extends): documentation ingestion, vector indexing and MCP retrieval"
 readme = "DEPLOYMENT.md"
 requires-python = ">=3.11"
