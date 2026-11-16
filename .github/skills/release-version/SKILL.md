@@ -40,6 +40,11 @@ Stop immediately on the first failure and report it. Do not continue to later st
 ### 2. Validation gate (mandatory)
 
 - Launch the `dev-python-validation` agent. Continue only if its final outcome is exactly `SUCCESS`.
+- When the agent lacks an execution tool required by the caller, use a background agent
+  so it can pause for coordinated execution. For each `EXECUTION_REQUEST`, run the
+  requested commands through the caller's required execution tool and send stdout,
+  stderr, and exit codes back to the same agent. Wait for its assessment before advancing;
+  never bypass a failed check or count a command request as a successful validation.
 - Run the repository gates with no bypass:
   - `python -m ruff check src tests`
   - `python -m mypy src`
