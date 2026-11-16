@@ -576,7 +576,13 @@ python -m build --sdist --wheel
 
 Les fichiers `.whl` et `.tar.gz` sont générés dans `dist/`.
 
-### Publier sur PyPI
+### Publier une release (recommandé)
+
+La publication est automatisée par le workflow GitHub Actions [publish-pypi.yml](.github/workflows/publish-pypi.yml) : tout push d'un tag `v*` construit le package, le publie sur PyPI (trusted publishing) et crée la release GitHub.
+
+Depuis le chat Copilot, utilisez le skill `release-version` : `/release <version>` (validation, bump de version, commit, tag `v<version>`, push et suivi du pipeline).
+
+### Publier sur PyPI manuellement
 
 **Prérequis:**
 - Compte PyPI créé sur https://pypi.org/account/register/
