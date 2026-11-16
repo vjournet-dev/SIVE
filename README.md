@@ -711,6 +711,8 @@ Les fichiers `.whl` et `.tar.gz` sont générés dans `dist/`.
 
 La publication est automatisée par le workflow GitHub Actions [publish-pypi.yml](.github/workflows/publish-pypi.yml) : tout push d'un tag `v*` construit le package, le publie sur PyPI (trusted publishing) et crée la release GitHub.
 
+Les actions JavaScript de ce workflow utilisent nativement Node.js 24 sur le runner GitHub `ubuntu-latest`; cela ne change pas la version Python du package.
+
 Depuis le chat Copilot, utilisez le skill `release-version` : `/release <version>` (validation, bump de version, commit, tag `v<version>`, push et suivi du pipeline).
 
 ### Publier sur PyPI manuellement
