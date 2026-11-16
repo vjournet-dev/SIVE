@@ -10,9 +10,9 @@ Your job is to validate the application end-to-end in a fully sequential way. Yo
 ## Mandatory Sequence
 1. Read the relevant code and configuration.
 2. Confirm architecture alignment with `docs/AI_ARCHITECTURE.md`:
-   - `mcp_server.py` remains a thin facade.
-   - tool registration is split across `mcp_server_tools_admin.py`, `mcp_server_tools_search.py`, `mcp_server_tools_ingest.py`.
-   - reusable logic lives in `mcp_server_core.py`.
+   - `src/sive/app/mcp_server/server.py` remains a thin orchestrator.
+   - tool registration is split across `tools_admin.py`, `tools_search.py`, `tools_ingest.py` in that package.
+   - reusable business logic lives in the appropriate `src/sive/domain/` modules; external adapters live in `src/sive/infra/`.
 3. Validate install-generated skill/config artifacts using the CLI command:
    - Run: `python -m sive install --target all --output-dir <temp_dir>`.
    - Verify generated files exist:
@@ -25,6 +25,16 @@ Your job is to validate the application end-to-end in a fully sequential way. Yo
      Claude `mcpServers.sive` with `type: stdio` and no `cwd`; Codex TOML `[mcp_servers.sive]`;
      OpenCode v2 `mcp.servers.sive` with an array `command`.
    - Verify no system prompt or global instruction file is generated.
+   - Run `python -m pytest -q tests/test_skill_install.py` as the executable contract for
+     generated skills and native configurations. Do not invent additional literal keyword
+     assertions for automatic invocation.
+   - Inspect the YAML frontmatter separately from the body. The description uses a folded
+     scalar (`>-`): normalize whitespace before checking phrases across lines.
+     Automatic triggers mean the description tells the client when to use the skill for
+     documentation-dependent questions or code (libraries, frameworks, SDKs, APIs, CLIs,
+     cloud services), independently of explicit `/sive` commands. Equivalent wording is
+     valid; do not require phrases such as "documentation task" and "documentation tasks"
+     to both occur. This validates discoverability instructions, not actual client invocation.
    - Verify `sive/SKILL.md` has `name` and `description` YAML frontmatter and mentions:
      - Documentation-dependent tasks as automatic triggers, not just slash commands
      - `/sive add`, `/sive update`, `/sive list`, `/sive remove`, `/sive help`

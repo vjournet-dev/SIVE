@@ -488,6 +488,10 @@ Tests must monkeypatch `sive.__main__.get_sentence_transformer_embedding_functio
 ### 10.4 Validation
 
 - Focused tests: `python -m pytest -q tests/test_skill_install.py`.
+- The validation agent uses these tests as the executable install-artifact contract.
+  Inspect automatic triggers in the whitespace-normalized folded frontmatter description;
+  accept equivalent wording instead of requiring a list of synonymous literal phrases.
+  This checks discoverability instructions, not whether a client actually invokes the skill.
 - Required gates: ruff, mypy, and the complete pytest suite.
 - Install smoke tests must use temporary output/home directories, never real user configs.
 - Official format references are linked in README.md; OpenCode's contract targets v2.

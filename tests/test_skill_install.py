@@ -21,6 +21,10 @@ def test_rendered_skill_is_discoverable_and_uses_discovery_then_query(tmp_path):
     assert "description: >-" in frontmatter
     assert len(description) <= 1024
     assert "before answering questions or writing code" in description
+    for dependency in ("library", "framework", "SDK", "API", "CLI", "cloud service"):
+        assert dependency in description
+    for task in ("usage", "configuration", "setup", "migration", "errors", "version differences"):
+        assert task in description
     assert "/sive command" in description
     assert 'argument-hint: "add <url|topic|path> | update <site_id|path> | list | remove <doc_id> | help"' in frontmatter
     assert body.index("list_documentation_sites_in_database") < body.index("search_documentation")
