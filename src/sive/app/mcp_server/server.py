@@ -14,7 +14,7 @@ def _create_mcp_server(name: str) -> Any:
         from mcp.server.mcpserver import MCPServer as MCPServerClass
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
-            "MCPServer is not available. Install/upgrade dependency 'mcp>=2.0.0' in the runtime environment."
+            "MCPServer is not available. Install dependency 'mcp==2.3.0' in the runtime environment."
         ) from exc
     return MCPServerClass(name)
 

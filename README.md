@@ -18,7 +18,7 @@ et pipeline de données dédié, plutôt que cet usage MCP documentaire.
 
 ## Prérequis
 
-- Python 3.11+
+- Python 3.14.10 (version pinned in `.python-version`)
 - Accès réseau aux documentations à indexer
 
 ## Auth Hugging Face (optionnel)
@@ -268,6 +268,27 @@ MCP, le CLI peut servir à l'ingestion après vérification de `sive --help` et
 `sive ingest --help`; il n'expose pas de commande autonome de liste ou recherche.
 La sélection et les permissions des skills restent gérées par le client: ce
 n'est pas une injection permanente.
+
+### Compatibilité du protocole MCP
+
+La dépendance `mcp==2.3.0` est figée pour accepter en `stdio` les clients utilisant
+le handshake `initialize` du protocole `2025-11-25` et ceux utilisant
+`server/discover` du protocole `2026-07-28`. Les tests vérifient la négociation
+et le listing des outils pour les deux protocoles, sans charger le modèle.
+
+Le paquet SIVE 1.0.0 publié utilise `mcp==2.0.0`, dont le serveur stdio refuse
+le handshake historique avec l'erreur `-32022`, `initialize handshake is not accepted`.
+Une mise à jour de Python seule ne corrige pas cette erreur.
+Pour tester le correctif avant publication, arrêter le serveur MCP puis installer
+ce checkout depuis la racine du dépôt:
+
+```bash
+uv tool install --force --python 3.14.10 .
+```
+
+Cette commande installe les dépendances corrigées sans modifier les données indexées.
+Redémarrer ensuite le client MCP. Une simple mise à jour du paquet PyPI 1.0.0
+ne récupère pas les changements non encore publiés.
 
 ### Démarrage et premier appel
 
@@ -701,7 +722,7 @@ Formats vérifiés dans les documentations officielles:
 ### Construire le package
 
 ```bash
-pip install build
+pip install build==1.6.1
 python -m build --sdist --wheel
 ```
 
@@ -731,7 +752,7 @@ rm -r build dist *.egg-info
 python -m build --sdist --wheel
 
 # 3. Vérifier les fichiers (optionnel mais recommandé)
-pip install twine
+pip install twine==7.0.0
 twine check dist/*
 
 # 4. Upload sur PyPI (remplacer YOUR_TOKEN par votre token)

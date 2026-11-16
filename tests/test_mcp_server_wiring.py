@@ -1,7 +1,13 @@
 import asyncio
+import json
 import logging
+import os
+import sys
+import tempfile
 import threading
 from types import SimpleNamespace
+
+import pytest
 
 from sive.app import mcp_server
 
@@ -42,6 +48,73 @@ def test_build_server_does_not_open_the_collection_at_startup(monkeypatch):
     monkeypatch.setattr(mcp_server, "_open_collection", open_collection)
 
     assert mcp_server.build_server(chroma_path="ignored-path") is not None
+
+
+@pytest.mark.parametrize("protocol_version", ["2025-11-25", "2026-07-28"])
+def test_stdio_clients_can_negotiate_protocol_and_list_tools(protocol_version, tmp_path):
+    async def exercise_client():
+        script = """
+from sive.app import mcp_server
+
+def fail_if_collection_opened(*args):
+    raise AssertionError("protocol negotiation must not open the vector store")
+
+mcp_server._open_collection = fail_if_collection_opened
+mcp_server.build_server(warm_up=False).run(transport="stdio")
+"""
+        with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                script,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=stderr,
+                env={**os.environ, "SIVE_DATA_DIR": str(tmp_path)},
+            )
+            try:
+                async def request(request_id, method, params):
+                    message = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+                    process.stdin.write((json.dumps(message) + "\n").encode())
+                    await process.stdin.drain()
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=30)
+                    stderr.seek(0)
+                    assert line, stderr.read()
+                    response = json.loads(line)
+                    assert response["id"] == request_id
+                    assert "error" not in response, response
+                    return response["result"]
+
+                if protocol_version == "2025-11-25":
+                    result = await request(
+                        1,
+                        "initialize",
+                        {
+                            "protocolVersion": protocol_version,
+                            "capabilities": {},
+                            "clientInfo": {"name": "sive-compatibility-test", "version": "1"},
+                        },
+                    )
+                    assert result["protocolVersion"] == protocol_version
+                    process.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
+                    params = {}
+                else:
+                    params = {
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": protocol_version,
+                            "io.modelcontextprotocol/clientCapabilities": {},
+                        }
+                    }
+                    await request(1, "server/discover", params)
+
+                result = await request(2, "tools/list", params)
+                assert "search_documentation" in {tool["name"] for tool in result["tools"]}
+            finally:
+                if process.returncode is None:
+                    process.terminate()
+                await asyncio.wait_for(process.communicate(), timeout=10)
+
+    asyncio.run(exercise_client())
 
 
 def test_build_server_warm_up_opens_the_collection_in_background(monkeypatch):

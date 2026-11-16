@@ -18,7 +18,7 @@ de synchronisation plus fréquente et une architecture de traitement dédiée.
 
 ## 1) Prérequis
 
-- Python 3.11+
+- Python 3.14.10 (version de développement figée dans `.python-version`)
 - pip
 - GitHub Copilot CLI, Claude Code, Codex ou OpenCode v2
 
@@ -77,6 +77,23 @@ sive --help
 
 L'installation avec pip ou `uv tool install` expose une seule commande: `sive`.
 Le dépôt officiel est https://github.com/vjournet-dev/SIVE.
+
+### Erreur de protocole MCP avec SIVE 1.0.0
+
+L'erreur `-32022`, `initialize handshake is not accepted`, avec les versions
+`2026-07-28` et `2025-11-25` provient du SDK `mcp==2.0.0` utilisé par le paquet
+SIVE 1.0.0 publié. Le dépôt fixe `mcp==2.3.0`, qui accepte les deux protocoles
+sur le transport stdio. Changer uniquement Python ne suffit pas.
+
+Avant publication du correctif, arrêter le serveur MCP et installer le checkout
+corrigé depuis la racine du dépôt:
+
+```bash
+uv tool install --force --python 3.14.10 .
+```
+
+Redémarrer ensuite le client MCP. La réinstallation ne supprime pas les données
+indexées. `uv tool upgrade sive` ne récupère pas les changements non publiés.
 
 ### Installer la skill SIVE et le MCP
 
