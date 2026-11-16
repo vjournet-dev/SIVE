@@ -605,6 +605,10 @@ Use this checklist before shipping a release branch/tag.
    (`raw/ingest_jobs.json`, `raw/topic_routes.json`, `raw/site_sync_state.json`) and confirm
    the MCP ingest, search, admin and authentication tool surface.
 
+Default pytest discovery is restricted to `tests/` in `pyproject.toml`, so
+`python -m pytest -q` does not collect third-party tests from local dependency
+caches. Explicit test file paths remain supported.
+
 Release validation is determined by the exit codes of Ruff, mypy and pytest, not by an
 agent's prose verdict or generated inline checks. Retain full command output, exit codes
 and failure tracebacks in session logs. Report optional E2E failures, tooling blockers and
