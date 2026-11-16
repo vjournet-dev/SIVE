@@ -8,6 +8,7 @@ from mcp.server.mcpserver import Context, MCPServer
 
 from ...domain.catalog import DocumentationCatalogService
 from ...domain.runtime_state.runtime import IngestRuntime
+from .annotations import DESTRUCTIVE, READ_ONLY
 
 
 async def _emit_progress_safe(ctx: Context | None, info_message: str, progress_percent: float, bar_message: str) -> None:
@@ -34,19 +35,14 @@ def register_admin_tools(
     format_progress_bar: Callable[[int, int], str],
     job_to_dict: Callable[[Any], dict[str, Any]],
 ) -> None:
-    @server.tool()
+    @server.tool(annotations=READ_ONLY)
     def list_indexed_doc_sites() -> str:
-        """MANDATORY first step for project documentation work.
+        """Compact list of the documentation sites that are ready to search (site_id and name).
 
-        Always call this tool before using search_documentation for project-specific technical questions.
-        This is the source of truth for currently available indexed documentation.
-
-        Important behavior:
-        - Sites currently being ingested are temporarily hidden to avoid using partially updated docs.
-        - If a site is hidden, call ingest_status(job_id) and wait until completion.
-
-        Returns:
-        - Available documentation sites with site_id and site_name.
+        Sites currently being ingested are hidden until their job completes, to avoid using partially
+        updated docs; follow such a job with wait_for_ingest_completion(job_id).
+        Prefer list_documentation_sites_in_database for discovery: it also reports document counts and
+        which sites are ingesting.
         """
         active_sites = runtime.active_site_ids()
         visible, hidden_visible = catalog_service.indexed_sites(active_site_ids=active_sites)
@@ -66,12 +62,15 @@ def register_admin_tools(
             lines.append("Temporarily hidden while ingesting: " + ", ".join(hidden_visible))
         return "\n".join(lines)
 
-    @server.tool()
+    @server.tool(annotations=READ_ONLY)
     def list_documentation_sites_in_database(include_active: bool = True) -> str:
-        """Return documentation sites currently stored in Chroma DB.
+        """Discovery step before searching: list the indexed documentation sites.
 
-        This returns a JSON payload with per-site document counts and active
-        ingestion flags. Use include_active=False to hide sites currently ingesting.
+        Returns JSON with each site's site_id, name, document count and active-ingestion flag. Match the
+        library, product and version of the task to a site_id, then call search_documentation with it.
+        Reuse the result for the rest of the conversation; call it again after an ingestion or a removal.
+        Use include_active=False to hide the sites currently being ingested.
+        The first call after the server starts can be slow while the index opens; wait for it.
         """
         payload = catalog_service.list_sites(
             active_site_ids=runtime.active_site_ids(),
@@ -79,7 +78,7 @@ def register_admin_tools(
         )
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=READ_ONLY)
     def get_site_sync_status(site_id: str) -> str:
         """Return persisted scraping/indexing timestamps for a documentation site."""
         cleaned_site_id = site_id.strip()
@@ -102,7 +101,7 @@ def register_admin_tools(
         payload["message"] = "Timestamps are stored in UTC ISO-8601 format."
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=READ_ONLY)
     def list_site_sync_status(
         sort_by: str = "staleness",
         descending: bool = True,
@@ -145,11 +144,12 @@ def register_admin_tools(
             }
         )
 
-    @server.tool()
+    @server.tool(annotations=DESTRUCTIVE)
     def delete_documentation_site(site_id: str, delete_raw_files: bool = True) -> str:
-        """Delete a documentation site from Chroma and local persisted state.
+        """Permanently delete a documentation site from Chroma and local persisted state.
 
         By default, this also deletes raw crawl/state files for the site.
+        Destructive: call it only when the user explicitly asked to remove that site.
         """
         payload = catalog_service.delete_site(
             site_id,
@@ -157,9 +157,9 @@ def register_admin_tools(
         )
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=READ_ONLY)
     async def ingest_status(job_id: str, ctx: Context | None = None) -> str:
-        """Get status and result details for a previously started ingest job."""
+        """Get status and result details for a previously started ingest job (single poll)."""
         job = runtime.get_job(job_id)
 
         if job is None:
@@ -202,16 +202,17 @@ def register_admin_tools(
         )
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=READ_ONLY)
     async def wait_for_ingest_completion(
         job_id: str,
         poll_interval_seconds: float = 2.0,
         timeout_seconds: float = 600.0,
         ctx: Context | None = None,
     ) -> str:
-        """Block until an ingest job completes or timeout occurs.
+        """Wait until an ingest job completes or timeout_seconds elapses; the default way to follow a job.
 
-        Useful for clients that prefer completion notification over manual polling.
+        Reports progress while waiting. A timeout is not a failure: the job keeps running, so call this
+        again or check ingest_status(job_id).
         """
         if poll_interval_seconds <= 0 or poll_interval_seconds > 30:
             raise ValueError("poll_interval_seconds must be between 0 and 30")

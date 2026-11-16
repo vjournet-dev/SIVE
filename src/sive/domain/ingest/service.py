@@ -12,6 +12,7 @@ from ...config import CHROMA_DIR, DEFAULT_COLLECTION_NAME, site_index_state_path
 from ...domain.core.sites import SiteDefinition
 from ...domain.index.indexing import index_chunks, index_pages_incrementally, make_chunks
 from ...domain.parse.loader import load_local_pages, load_remote_pages
+from ...infra.vector_store.embedding_loader import DEFAULT_EMBEDDING_MODEL_NAME
 from ...infra.web.scraper import AuthSession, CrawlProgress, DocPage, crawl_docs
 from ..runtime_state.progress import format_progress_bar
 from .contracts import IngestRequest
@@ -82,7 +83,7 @@ def run_ingest_for_site(
     delay: float = 0.2,
     crawl_progress_every: int = 25,
     collection_name: str = DEFAULT_COLLECTION_NAME,
-    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+    embedding_model_name: str = DEFAULT_EMBEDDING_MODEL_NAME,
     reset_collection: bool = False,
     chunk_size: int = 1200,
     overlap: int = 200,
@@ -148,7 +149,7 @@ def update_existing_local_site(
     *,
     collection: Any,
     collection_name: str = DEFAULT_COLLECTION_NAME,
-    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+    embedding_model_name: str = DEFAULT_EMBEDDING_MODEL_NAME,
     chunk_size: int = 1200,
     overlap: int = 200,
     load_local_pages_func: Callable[..., list[DocPage]] = load_local_pages,

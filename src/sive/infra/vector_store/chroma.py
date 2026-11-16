@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from chromadb import Collection
+if TYPE_CHECKING:
+    from chromadb import Collection
 
 _LOGGER = logging.getLogger(__name__)
 _EMBEDDING_CONFLICT_MARKER = "embedding function already exists in the collection configuration"

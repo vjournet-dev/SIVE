@@ -21,12 +21,9 @@ def _create_mcp_server(name: str) -> Any:
 
 def build_server(
     *,
-    chroma_path: str,
+    collection: Any,
     collection_name: str,
     embedding_model_name: str,
-    chromadb_module: Any,
-    apply_hf_token_from_env_func: Callable[[], str | None],
-    get_collection_from_client_func: Callable[[Any, str, str], Any],
     ingest_runtime_cls: Any,
     register_admin_tools_func: Callable[..., None],
     register_search_tools_func: Callable[..., None],
@@ -60,9 +57,6 @@ def build_server(
     sync_staleness_seconds_func: Callable[..., int | None],
 ) -> MCPServer:
     server = _create_mcp_server("sive")
-    client = chromadb_module.PersistentClient(path=chroma_path)
-    apply_hf_token_from_env_func()
-    collection = get_collection_from_client_func(client, collection_name, embedding_model_name)
     runtime = ingest_runtime_cls(
         collection=collection,
         jobs_state_path=jobs_state_path,

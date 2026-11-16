@@ -7,9 +7,8 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from chromadb import Collection
-
 if TYPE_CHECKING:
+    from chromadb import Collection
     from mcp.server.mcpserver import Context
 else:
     Context = Any

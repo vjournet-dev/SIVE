@@ -15,6 +15,7 @@ from ...domain.ingest.input_resolution import looks_like_local_path
 from ...domain.ingest.service import update_existing_local_site
 from ...domain.runtime_state.progress import format_progress_bar
 from ...domain.runtime_state.runtime import IngestRuntime
+from .annotations import AUTHENTICATION, INGESTION
 
 
 def register_ingest_tools(
@@ -29,7 +30,7 @@ def register_ingest_tools(
     resolve_ingest_input: Callable[[str, int], dict[str, Any]],
     site_from_urls: Callable[..., SiteDefinition] | None = None,
 ) -> None:
-    @server.tool()
+    @server.tool(annotations=INGESTION)
     def ingest(
         url: str,
         incremental: bool = True,
@@ -40,18 +41,21 @@ def register_ingest_tools(
         site_id: str | None = None,
         site_name: str | None = None,
     ) -> str:
-        """Start asynchronous ingestion for a documentation URL or a topic text query.
+        """Start asynchronous ingestion for a documentation URL, a local file/folder path or a topic text query.
 
-        The server derives the default crawl scope from the URL:
+        Prefer absolute paths for local sources. The server derives the default crawl scope from the URL:
         - allowed_host = URL host
         - allowed_path_prefix = first path segment (or '/').
+        Confirm the intended documentation branch with the user before crawling a URL with several
+        path segments, and pass allowed_url_prefixes to restrict the crawl to it.
 
         To combine same-host documentation branches into one source, pass additional_urls.
         Their full paths become strict crawl prefixes by default, or provide
         allowed_url_prefixes as absolute URLs or path prefixes. Optional site_id and
         site_name identify the combined documentation source.
 
-        Returns immediately with a job_id. Use ingest_status(job_id) for progress and final outcome.
+        Returns immediately with a job_id. Follow it with wait_for_ingest_completion(job_id)
+        (ingest_status(job_id) is a single poll).
         """
         if max_pages < 1 or max_pages > 20000:
             raise ValueError("max_pages must be between 1 and 20000")
@@ -112,7 +116,7 @@ def register_ingest_tools(
 
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=INGESTION)
     def ingest_and_register_topic(
         topic: str,
         url: str,
@@ -185,7 +189,7 @@ def register_ingest_tools(
         ingest_payload["route_registered"] = True
         return format_json(ingest_payload)
 
-    @server.tool()
+    @server.tool(annotations=INGESTION)
     def update_site_differential(site_id: str, max_pages: int = 1200, delay: float = 0.2) -> str:
         """Start a differential update for an already indexed documentation site.
 
@@ -223,7 +227,7 @@ def register_ingest_tools(
         payload["mode"] = "differential_update"
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=INGESTION)
     def update_documentation_source(target: str, max_pages: int = 1200, delay: float = 0.2) -> str:
         """Update an existing documentation source by site_id (remote) or local path.
 
@@ -283,7 +287,7 @@ def register_ingest_tools(
         payload.setdefault("progress_bar", format_progress_bar(int(payload["progress_percent"])))
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=AUTHENTICATION)
     def authenticate_ingest_job(job_id: str, timeout_seconds: float = 300.0) -> str:
         """Open an interactive browser login flow and resume an auth-blocked ingestion job.
 
@@ -292,7 +296,7 @@ def register_ingest_tools(
         payload = runtime.authenticate_ingest_job(job_id=job_id, timeout_seconds=timeout_seconds)
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=AUTHENTICATION)
     def set_ingest_auth_session(
         job_id: str,
         cookies: dict[str, str] | None = None,
@@ -310,7 +314,7 @@ def register_ingest_tools(
         )
         return format_json(payload)
 
-    @server.tool()
+    @server.tool(annotations=AUTHENTICATION)
     def set_ingest_auth_config(
         job_id: str,
         auth_config: dict[str, Any],

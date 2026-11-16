@@ -10,7 +10,7 @@ class _FakeServer:
     def __init__(self) -> None:
         self.tools = {}
 
-    def tool(self):
+    def tool(self, annotations=None):
         def decorator(function):
             self.tools[function.__name__] = function
             return function

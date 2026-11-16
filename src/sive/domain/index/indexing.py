@@ -6,15 +6,18 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from urllib.parse import urlparse
 
-import chromadb
-from chromadb import Collection
-
 from ...infra.vector_store.chroma import get_collection
-from ...infra.vector_store.embedding_loader import get_sentence_transformer_embedding_function
+from ...infra.vector_store.embedding_loader import (
+    DEFAULT_EMBEDDING_MODEL_NAME,
+    get_sentence_transformer_embedding_function,
+)
 from ...infra.web.scraper import DocPage, DocSection
+
+if TYPE_CHECKING:
+    from chromadb import Collection
 
 
 @dataclass
@@ -288,6 +291,8 @@ def _get_collection(
     embedding_model_name: str,
     reset_collection: bool,
 ) -> Collection:
+    import chromadb  # deferred: importing chromadb is slow and only needed once a collection is opened
+
     return get_collection(
         chroma_dir,
         collection_name,
@@ -360,7 +365,7 @@ def index_chunks(
     chunks: list[DocChunk],
     chroma_dir: Path,
     collection_name: str,
-    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+    embedding_model_name: str = DEFAULT_EMBEDDING_MODEL_NAME,
     reset_collection: bool = False,
     batch_size: int = 128,
     progress_callback: IndexProgressCallback = None,
@@ -374,7 +379,7 @@ def index_pages_incrementally(
     chroma_dir: Path,
     collection_name: str,
     state_path: Path,
-    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+    embedding_model_name: str = DEFAULT_EMBEDDING_MODEL_NAME,
     reset_collection: bool = False,
     batch_size: int = 128,
     chunk_size: int = 1200,

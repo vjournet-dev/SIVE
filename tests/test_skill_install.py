@@ -5,28 +5,47 @@ import pytest
 
 from sive.__main__ import build_parser, cmd_install
 from sive.domain.client_install import service as skill_install
+from sive.infra.vector_store.embedding_loader import DEFAULT_EMBEDDING_MODEL_NAME
 
 
 def test_rendered_skill_is_discoverable_and_uses_discovery_then_query(tmp_path):
     written = skill_install.install_skill_files("all", tmp_path)
 
-    assert written == [tmp_path / "sive" / "SKILL.md"]
+    assert written == [tmp_path / "sive" / "SKILL.md", tmp_path / "opencode" / "commands" / "sive.md"]
     skill = written[0].read_text(encoding="utf-8")
     frontmatter, body = skill.removeprefix("---\n").split("\n---\n", 1)
+    flat_frontmatter = " ".join(frontmatter.split())
+    flat = " ".join(body.split())
+    description = flat_frontmatter.split("description: >- ", 1)[1].split(" argument-hint:", 1)[0]
     assert "name: sive" in frontmatter
     assert "description: >-" in frontmatter
-    assert "when relevant documentation is discovered" in frontmatter
+    assert len(description) <= 1024
+    assert "before answering questions or writing code" in description
+    assert "/sive command" in description
+    assert 'argument-hint: "add <url|topic|path> | update <site_id|path> | list | remove <doc_id> | help"' in frontmatter
     assert body.index("list_documentation_sites_in_database") < body.index("search_documentation")
-    assert "separate searches" in body
-    assert "source URLs" in body
-    assert "sive ingest --start-url" in body
-    assert "no standalone list/search command" in body
-    assert "needs_confirmation" in body
-    assert "Never broaden prefixes" in body
-    assert "wait_for_ingest_completion" in body
-    assert "never\nask for passwords" in body
+    assert "mcp__sive__<tool>" in flat
+    assert "sive-<tool>" in flat
+    assert "sive_<tool>" in flat
+    assert "reuse the site identifiers" in flat
+    assert "separate searches, in parallel" in flat
+    assert "first call after the server starts that reads the index" in flat
+    assert "source URLs" in flat
+    assert "sive ingest --start-url" in flat
+    assert "no standalone list/search command" in flat
+    assert "needs_confirmation" in flat
+    assert "never call it unless the user asked to remove that source" in flat
+    assert "Never broaden prefixes" in flat
+    assert "absolute paths" in flat
+    assert "wait_for_ingest_completion" in flat
+    assert "never ask for passwords" in flat
     assert "system_prompt" not in skill.lower()
     assert not list(tmp_path.rglob("*PROMPT*"))
+
+    command = written[1].read_text(encoding="utf-8")
+    assert command.startswith("---\ndescription: ")
+    assert "`sive` skill" in command
+    assert "/sive $ARGUMENTS" in command
 
 
 def test_default_install_uses_native_skill_paths_and_mcp_formats(tmp_path):
@@ -38,37 +57,43 @@ def test_default_install_uses_native_skill_paths_and_mcp_formats(tmp_path):
 
     assert set(written) == {"github", "claude", "codex", "opencode"}
     paths = {
-        "github": (".copilot/skills/sive/SKILL.md", ".copilot/mcp-config.json"),
-        "claude": (".claude/skills/sive/SKILL.md", ".claude.json"),
-        "codex": (".agents/skills/sive/SKILL.md", ".codex/config.toml"),
-        "opencode": (".config/opencode/skills/sive/SKILL.md", ".config/opencode/opencode.json"),
+        "github": [".copilot/skills/sive/SKILL.md", ".copilot/mcp-config.json"],
+        "claude": [".claude/skills/sive/SKILL.md", ".claude.json"],
+        "codex": [".agents/skills/sive/SKILL.md", ".codex/config.toml"],
+        "opencode": [
+            ".config/opencode/skills/sive/SKILL.md",
+            ".config/opencode/commands/sive.md",
+            ".config/opencode/opencode.json",
+        ],
     }
-    for target, (skill_path, config_path) in paths.items():
-        assert written[target] == [tmp_path / skill_path, tmp_path / config_path]
-        assert (tmp_path / skill_path).read_text(encoding="utf-8").startswith("---\n")
+    for target, relative_paths in paths.items():
+        assert written[target] == [tmp_path / path for path in relative_paths]
+        assert (tmp_path / relative_paths[0]).read_text(encoding="utf-8").startswith("---\n")
+    assert "$ARGUMENTS" in (tmp_path / ".config/opencode/commands/sive.md").read_text(encoding="utf-8")
 
+    # No cwd is written by default: each client starts the server from the project directory.
     command = str((tmp_path / "bin" / "sive").resolve())
-    cwd = str((tmp_path / "bin").resolve())
-    github = json.loads((tmp_path / paths["github"][1]).read_text(encoding="utf-8"))
+    github = json.loads((tmp_path / ".copilot/mcp-config.json").read_text(encoding="utf-8"))
     assert github["mcpServers"]["sive"] == {
         "type": "local",
         "command": command,
         "args": ["serve"],
-        "cwd": cwd,
         "tools": ["*"],
+        "timeout": 900_000,
     }
     claude = json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8"))
     assert claude["mcpServers"]["sive"] == {"type": "stdio", "command": command, "args": ["serve"]}
-    codex = tomllib.loads((tmp_path / paths["codex"][1]).read_text(encoding="utf-8"))
-    assert codex["mcp_servers"]["sive"] == {"command": command, "args": ["serve"], "cwd": cwd}
-    opencode = json.loads((tmp_path / paths["opencode"][1]).read_text(encoding="utf-8"))
+    codex = tomllib.loads((tmp_path / ".codex/config.toml").read_text(encoding="utf-8"))
+    assert codex["mcp_servers"]["sive"] == {
+        "command": command,
+        "args": ["serve"],
+        "startup_timeout_sec": 60,
+        "tool_timeout_sec": 900,
+    }
+    opencode = json.loads((tmp_path / ".config/opencode/opencode.json").read_text(encoding="utf-8"))
     assert opencode["$schema"] == "https://opencode.ai/config.json"
     assert set(opencode["mcp"]) == {"servers"}
-    assert opencode["mcp"]["servers"]["sive"] == {
-        "type": "local",
-        "command": [command, "serve"],
-        "cwd": cwd,
-    }
+    assert opencode["mcp"]["servers"]["sive"] == {"type": "local", "command": [command, "serve"]}
     assert not list(tmp_path.rglob("*PROMPT*"))
 
 
@@ -128,6 +153,47 @@ def test_json_install_preserves_other_settings_and_is_idempotent(target, config_
     updated = json.loads(first)
     updated[server_key].pop("sive")
     assert updated == payload
+
+
+def test_reinstall_keeps_extra_json_options_and_drops_stale_cwd(tmp_path):
+    path = tmp_path / ".copilot" / "mcp-config.json"
+    path.parent.mkdir()
+    previous = {"type": "local", "command": "old", "cwd": "C:/old", "env": {"SIVE_DATA_DIR": "D:/sive"}}
+    path.write_text(json.dumps({"mcpServers": {"sive": previous}}), encoding="utf-8")
+
+    skill_install.install_skill_files_default_locations(
+        "github",
+        home=tmp_path,
+        which_func=lambda _: None,
+        sys_executable=str(tmp_path / "python"),
+    )
+
+    server = json.loads(path.read_text(encoding="utf-8"))["mcpServers"]["sive"]
+    assert server["env"] == {"SIVE_DATA_DIR": "D:/sive"}
+    assert server["command"] == str(tmp_path / "python")
+    assert server["args"] == ["-m", "sive", "serve"]
+    assert "cwd" not in server
+
+
+def test_codex_reinstall_keeps_extra_options_and_drops_stale_cwd_idempotently(tmp_path):
+    path = tmp_path / ".codex" / "config.toml"
+    path.parent.mkdir()
+    path.write_text(
+        '[mcp_servers.sive]\ncommand = "old"\ncwd = "C:/old"\n\n[mcp_servers.sive.env]\nSIVE_DATA_DIR = "D:/sive"\n',
+        encoding="utf-8",
+    )
+    kwargs = {"home": tmp_path, "which_func": lambda _: None, "sys_executable": str(tmp_path / "python")}
+
+    skill_install.install_skill_files_default_locations("codex", **kwargs)
+    first = path.read_text(encoding="utf-8")
+    skill_install.install_skill_files_default_locations("codex", **kwargs)
+
+    assert path.read_text(encoding="utf-8") == first
+    server = tomllib.loads(first)["mcp_servers"]["sive"]
+    assert server["env"] == {"SIVE_DATA_DIR": "D:/sive"}
+    assert server["command"] == str(tmp_path / "python")
+    assert server["tool_timeout_sec"] == 900
+    assert "cwd" not in server
 
 
 def test_codex_install_preserves_toml_settings_comments_and_other_servers(tmp_path):
@@ -258,9 +324,53 @@ def test_cli_default_install_passes_python_and_cwd_overrides(monkeypatch, tmp_pa
             str(tmp_path / "python.exe"),
             "--mcp-cwd",
             str(tmp_path / "work"),
+            "--skip-model-download",
         ]
     )
     cmd_install(args)
+
+
+def _record_model_loads(monkeypatch, *, error: Exception | None = None) -> list[str]:
+    loaded: list[str] = []
+
+    def load(model_name):
+        loaded.append(model_name)
+        if error is not None:
+            raise error
+        return object()
+
+    monkeypatch.setattr("sive.__main__.get_sentence_transformer_embedding_function", load)
+    monkeypatch.setattr("sive.__main__.install_skill_files_default_locations", lambda target, **kwargs: {})
+    return loaded
+
+
+def test_cli_default_install_prefetches_server_embedding_model(monkeypatch):
+    loaded = _record_model_loads(monkeypatch)
+
+    cmd_install(build_parser().parse_args(["install", "--target", "codex"]))
+
+    assert loaded == [DEFAULT_EMBEDDING_MODEL_NAME]
+
+
+@pytest.mark.parametrize("extra_args", [["--skip-model-download"], ["--output-dir", "{tmp}"]])
+def test_cli_install_skips_model_prefetch(monkeypatch, tmp_path, extra_args):
+    loaded = _record_model_loads(monkeypatch)
+    argv = ["install", "--target", "github", *(arg.replace("{tmp}", str(tmp_path)) for arg in extra_args)]
+
+    cmd_install(build_parser().parse_args(argv))
+
+    assert loaded == []
+
+
+def test_cli_install_model_prefetch_failure_is_not_fatal(monkeypatch, capsys):
+    loaded = _record_model_loads(monkeypatch, error=OSError("network unreachable"))
+
+    cmd_install(build_parser().parse_args(["install", "--target", "claude"]))
+
+    assert loaded == [DEFAULT_EMBEDDING_MODEL_NAME]
+    output = capsys.readouterr().out
+    assert "network unreachable" in output
+    assert "premier appel MCP" in output
 
 
 def test_windows_executable_detection_and_module_fallback(tmp_path):

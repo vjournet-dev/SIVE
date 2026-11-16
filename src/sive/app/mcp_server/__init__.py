@@ -41,8 +41,12 @@ from ...domain.runtime_state.state import (
 from ...domain.search import DocumentationSearchService
 from ...infra.vector_store.catalog import ChromaDocumentationCatalogRepository
 from ...infra.vector_store.chroma import get_collection_from_client as _infra_get_collection_from_client
-from ...infra.vector_store.embedding_loader import get_sentence_transformer_embedding_function
+from ...infra.vector_store.embedding_loader import (
+	DEFAULT_EMBEDDING_MODEL_NAME,
+	get_sentence_transformer_embedding_function,
+)
 from ...infra.vector_store.hf_auth import apply_hf_token_from_env
+from ...infra.vector_store.lazy import LazyCollection
 from ...infra.vector_store.search import ChromaDocumentationSearchRepository
 from . import server as _app_server
 from .tools_admin import register_admin_tools
@@ -55,7 +59,7 @@ __all__ = ["build_server", "run_server"]
 chromadb: Any = SimpleNamespace(PersistentClient=None)
 
 
-def _resolve_chromadb_module() -> object:
+def _resolve_chromadb_module() -> Any:
 	global chromadb
 	if getattr(chromadb, "PersistentClient", None) is None:
 		chromadb = importlib.import_module("chromadb")
@@ -72,19 +76,27 @@ def get_collection_from_client(client: object, collection_name: str, embedding_m
 	)
 
 
+def _open_collection(chroma_path: str, collection_name: str, embedding_model_name: str) -> object:
+	chromadb_module = _resolve_chromadb_module()
+	client = chromadb_module.PersistentClient(path=chroma_path)
+	apply_hf_token_from_env()
+	return get_collection_from_client(client, collection_name, embedding_model_name)
+
+
 def build_server(
 	chroma_path: str = str(CHROMA_DIR),
 	collection_name: str = DEFAULT_COLLECTION_NAME,
-	embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+	embedding_model_name: str = DEFAULT_EMBEDDING_MODEL_NAME,
+	*,
+	warm_up: bool = False,
 ) -> MCPServer:
-	chromadb_module = _resolve_chromadb_module()
-	return _app_server.build_server(
-		chroma_path=chroma_path,
+	# Opening the collection imports chromadb/torch and loads the embedding model (tens of seconds), which
+	# exceeds MCP client startup timeouts. It is therefore deferred to first use, or to a background warm-up.
+	collection = LazyCollection(lambda: _open_collection(chroma_path, collection_name, embedding_model_name))
+	server = _app_server.build_server(
+		collection=collection,
 		collection_name=collection_name,
 		embedding_model_name=embedding_model_name,
-		chromadb_module=chromadb_module,
-		apply_hf_token_from_env_func=apply_hf_token_from_env,
-		get_collection_from_client_func=get_collection_from_client,
 		ingest_runtime_cls=IngestRuntime,
 		register_admin_tools_func=register_admin_tools,
 		register_search_tools_func=register_search_tools,
@@ -117,7 +129,10 @@ def build_server(
 		sync_to_dict_func=_sync_to_dict,
 		sync_staleness_seconds_func=_sync_staleness_seconds,
 	)
+	if warm_up:
+		collection.warm_up()
+	return server
 
 
 def run_server() -> None:
-	_app_server.run_server(build_server_func=build_server)
+	_app_server.run_server(build_server_func=lambda: build_server(warm_up=True))

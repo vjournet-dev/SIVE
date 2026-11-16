@@ -11,6 +11,7 @@ Primary app assembly:
 - `app/mcp_server/__init__.py`
    - Public entrypoints: `build_server`, `run_server`.
    - Dependency wiring for app server composition.
+   - `build_server(..., warm_up=False)` never loads the embedding model by itself; `run_server()` passes `warm_up=True`.
 
 - `app/mcp_server/server.py`
    - Thin orchestration layer only.
@@ -19,6 +20,9 @@ Primary app assembly:
 - `app/mcp_server/tools_admin.py`, `tools_search.py`, `tools_ingest.py`
    - Thin MCP parameter/response adapters by concern.
    - They do not query Chroma or implement business rules.
+
+- `app/mcp_server/annotations.py`
+   - Shared `ToolAnnotations` constants (read-only, ingestion, authentication, destructive) attached to every tool registration.
 
 Domain ownership:
 
@@ -59,6 +63,7 @@ Infrastructure ownership:
 
 - `infra/vector_store/*`
    - Chroma collection, search and catalog adapters plus embedding/auth wiring.
+   - `lazy.py` defers opening the collection (and therefore loading the embedding model) until first use or background warm-up.
 
 - `infra/web/scraper.py`
    - Crawl primitives, page extraction, and persistence helpers.
@@ -77,6 +82,15 @@ URL scope decision contract:
 3. If the user does not name a branch, scope the crawl to the URL's final path segment rather than its host or a parent path.
 4. When a documentation set requires several branches on the same host, ask the user to provide all branch URLs before ingesting.
 5. Model the confirmed branches as one multi-URL `SiteDefinition`: retain each branch in `start_urls` and `allowed_path_prefixes`, use one `site_id`, and never broaden the allowlist to a common parent path.
+
+Startup, storage and tool-hint contract:
+
+1. The MCP handshake (`initialize`, `tools/list`) must not wait for the embedding model. `build_server` hands tools a `LazyCollection` (`infra/vector_store/lazy.py`) whose factory runs `get_or_create_collection`, and therefore loads the model, only on first use.
+2. `run_server()` calls `build_server(warm_up=True)`, which starts the daemon thread `sive-warm-up` so the model loads in the background. Concurrent first calls wait for the same single load; a failed warm-up is retried on first use. The first call that reads the index (listing or search) can still wait for the model, then later calls are fast.
+3. `infra/vector_store/embedding_loader.py` loads the model from the local Hugging Face cache first (`local_files_only=True`, no network request) and downloads it only on a cache miss. Do not reintroduce an online-first load: it sends a Hub request per model file at every server start, which takes seconds on a good network and minutes behind a filtering proxy. `DEFAULT_EMBEDDING_MODEL_NAME` is the single source of the default model for the CLI, `build_server` and the domain defaults, so `sive install` prefetches exactly the model the server loads.
+4. `config.py::resolve_data_dir` chooses the data directory that holds `raw/` and `chroma/`: `SIVE_DATA_DIR`, then `<repo>/data` for a source checkout, then a per-user directory (`%LOCALAPPDATA%\sive`, `~/Library/Application Support/sive`, `$XDG_DATA_HOME/sive` or `~/.local/share/sive`). A non-empty legacy `<project_root>/data` stays in use while the per-user directory does not exist.
+5. Every tool is registered with `ToolAnnotations` from `app/mcp_server/annotations.py` so clients can approve reads without prompting and always ask before `delete_documentation_site`. Annotations are wiring only; they never replace validation in `domain/`.
+6. Known limit: each MCP client starts its own `sive serve` on the same data directory. Chroma does not refresh the in-memory vector index of a running process, so another process's additions show up in `get`-based listings but not in `query` results until restart (verified with chromadb 1.5.9). Do not assume multi-process freshness or concurrent writers without introducing a shared server.
 
 Validation/benchmark ownership:
 
@@ -161,7 +175,9 @@ For architecture changes:
 
 Server-related tests are intentionally split by concern:
 
-- `tests/test_mcp_server_wiring.py`: `build_server(...)` dependency wiring behavior
+- `tests/test_mcp_server_wiring.py`: `build_server(...)` dependency wiring behavior and tool annotations
+- `tests/test_lazy_collection.py`: lazy collection opening and background warm-up behavior
+- `tests/test_config_data_dir.py`: data directory resolution (`SIVE_DATA_DIR`, source checkout, per-user directory, legacy fallback)
 - `tests/test_mcp_discovery_helpers.py`: discovery/url-selection helper behavior
 - `tests/test_mcp_server_core_helpers.py`: core helper behavior (resolve, validate, format, rerank, list/delete)
 - `tests/test_mcp_state_helpers.py`: sync/state model helper behavior
@@ -243,6 +259,7 @@ This section is the source of truth for file placement in the canonical PR8 layo
 - `src/sive/app/__init__.py`
 - `src/sive/app/mcp_server/__init__.py`
 - `src/sive/app/mcp_server/server.py`
+- `src/sive/app/mcp_server/annotations.py`
 - `src/sive/app/mcp_server/tools_admin.py`
 - `src/sive/app/mcp_server/tools_ingest.py`
 - `src/sive/app/mcp_server/tools_search.py`
@@ -316,6 +333,7 @@ Vector store:
 - `src/sive/infra/vector_store/chroma.py`
 - `src/sive/infra/vector_store/embedding_loader.py`
 - `src/sive/infra/vector_store/hf_auth.py`
+- `src/sive/infra/vector_store/lazy.py`
 
 Web:
 - `src/sive/infra/web/__init__.py`
@@ -398,17 +416,26 @@ frontmatter. No system prompts or global instruction files are generated.
 
 | Target | Personal skill | User MCP config | Native format |
 | --- | --- | --- | --- |
-| GitHub Copilot CLI (`github`) | `~/.copilot/skills/sive/SKILL.md` | `~/.copilot/mcp-config.json` | `mcpServers.sive`, `type: local`, `tools: ["*"]` |
+| GitHub Copilot CLI (`github`) | `~/.copilot/skills/sive/SKILL.md` | `~/.copilot/mcp-config.json` | `mcpServers.sive`, `type: local`, `tools: ["*"]`, `timeout` (ms), optional `cwd` |
 | Claude Code (`claude`) | `~/.claude/skills/sive/SKILL.md` | `~/.claude.json` | `mcpServers.sive`, `type: stdio`, no `cwd` |
-| Codex (`codex`) | `~/.agents/skills/sive/SKILL.md` | `~/.codex/config.toml` | `[mcp_servers.sive]`, `command`, `args`, `cwd` |
-| OpenCode v2 (`opencode`) | `~/.config/opencode/skills/sive/SKILL.md` | `~/.config/opencode/opencode.json(c)` | `mcp.servers.sive`, `type: local`, command array, `cwd` |
+| Codex (`codex`) | `~/.agents/skills/sive/SKILL.md` | `~/.codex/config.toml` | `[mcp_servers.sive]`, `command`, `args`, `startup_timeout_sec`, `tool_timeout_sec`, optional `cwd` |
+| OpenCode v2 (`opencode`) | `~/.config/opencode/skills/sive/SKILL.md` | `~/.config/opencode/opencode.json(c)` | `mcp.servers.sive`, `type: local`, command array, optional `cwd` |
+
+OpenCode also gets `~/.config/opencode/commands/sive.md`: OpenCode commands are separate from
+skills, so this command exposes `/sive <command>` and tells the agent to follow the skill.
+
+Timeouts are written because the first call that reads the index waits for the embedding model
+(Codex defaults: 10 s startup, 60 s per tool call). Claude Code and OpenCode keep their defaults.
 
 Clients discover the description and load the body when relevant. Skill selection and
 permissions remain client-controlled; installation does not guarantee permanent injection.
-The skill follows discovery-then-query: inventory sources, select relevant identifiers,
-search one concept per query, read results, cite sources, and offer scoped ingestion when
-relevant documentation is missing. The CLI fallback supports ingestion, not standalone
-search; retrieval still requires a connection to `sive serve`.
+The skill follows discovery-then-query: inventory sources once per conversation, select
+relevant identifiers, run read-only searches without asking (one concept per query, in
+parallel when the client allows it), read results, cite sources, and offer scoped ingestion
+when relevant documentation is missing. It tells the agent to wait for the first slow call
+instead of retrying, and to pass local sources as absolute paths because the server is not
+guaranteed to run in the project directory. The CLI fallback supports ingestion, not
+standalone search; retrieval still requires a connection to `sive serve`.
 
 ### 10.2 Template contract
 
@@ -424,7 +451,8 @@ Each target defines:
 - `mcp_output_file`: exported JSON or TOML snippet name.
 - `default_install_files`: native user paths mapped to a rendered `source` or
   `special: "mcp_config"`.
-- Optional `render_files`: additional rendered content.
+- Optional `render_files`: additional rendered content (OpenCode renders
+  `opencode/commands/sive.md` from `shared_texts.opencode_sive_command`).
 
 Skill text changes require only JSON edits. Native format changes belong in the service,
 not in CLI or MCP server assembly.
@@ -435,13 +463,27 @@ not in CLI or MCP server assembly.
 their directory structure. `install_client_mcp_configs` exports native config snippets.
 Explicit output directories do not configure clients.
 
-`install_skill_files_default_locations` resolves `sive serve` or a Python module fallback,
+`install_skill_files_default_locations` resolves the server command (`sive` found on `PATH`,
+as an absolute path, with `serve`; otherwise the current interpreter with `-m sive serve`),
 applies explicit Python/cwd overrides, validates existing configurations before writing,
 and merges only the SIVE server into native files. Other servers and settings are retained.
+No `cwd` is written unless `--mcp-cwd` is given (never for Claude Code), so clients start the
+server in the project directory and relative paths keep their meaning. An existing `sive`
+entry is updated in place (`_apply_server_entry`): installer-owned keys are overwritten,
+user-added keys such as `env` survive, and a stale `cwd` is removed.
 TOML is parsed/updated using `tomlkit` to preserve comments and unrelated sections.
 Existing OpenCode JSONC is parsed using `json5` and rewritten as valid JSON in the same
 file; its settings are preserved but comments are not. Invalid configs raise explicit errors
-without being overwritten. No legacy user files are deleted automatically.
+without being overwritten. No legacy user files are deleted automatically. Client
+configuration environment variables (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME`)
+are not honored: only `~`-relative defaults are written, other locations use `--output-dir`.
+
+After writing default locations, the CLI (`__main__.cmd_install`) prefetches
+`DEFAULT_EMBEDDING_MODEL_NAME` through the embedding loader so the download happens once in
+the terminal instead of during the first MCP call. A prefetch failure only prints a warning.
+`--skip-model-download` disables it, and `--output-dir` exports never download the model.
+Tests must monkeypatch `sive.__main__.get_sentence_transformer_embedding_function` or pass
+`--skip-model-download`.
 
 ### 10.4 Validation
 

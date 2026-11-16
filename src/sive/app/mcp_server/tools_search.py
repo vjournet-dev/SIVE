@@ -12,6 +12,7 @@ from ...domain.rerank.engine import RankedSearchResult
 from ...domain.runtime_state.runtime import IngestRuntime
 from ...domain.runtime_state.state import TopicRouteRecord
 from ...domain.search import DocumentationSearchService
+from .annotations import READ_ONLY, READ_ONLY_OPEN_WORLD
 
 
 def register_search_tools(
@@ -24,7 +25,7 @@ def register_search_tools(
     search_doc_urls_on_web: Callable[[str, int], list[dict[str, str]]],
     format_search_results: Callable[[list[RankedSearchResult]], str],
 ) -> None:
-    @server.tool()
+    @server.tool(annotations=READ_ONLY)
     def search_documentation(
         query: str,
         top_k: int = 5,
@@ -32,23 +33,17 @@ def register_search_tools(
         site_ids: list[str] | None = None,
         topic: str | None = None,
     ) -> str:
-        """Primary retrieval tool for accurate, project-level documentation.
+        """Search the indexed documentation and return ranked excerpts with their source URLs.
 
-        Always use this tool for detailed project questions and when training data may be outdated.
-        Do not rely on memory alone when MCP retrieval is available.
+        Use it for library, framework, SDK, API, CLI and service questions instead of relying on memory,
+        since training data may be outdated. Get the site_id from list_documentation_sites_in_database,
+        pass site_id for one source or site_ids for several (never both), keep each query focused on one
+        concept, and include the API, version or error text. Cite the returned source URLs.
 
-        Mandatory workflow:
-        1. Call list_indexed_doc_sites first.
-        2. Use site_id filtering whenever the target product is known.
-        3. Cite returned source URLs in the final answer.
-
-        During ingestion:
-        - search_documentation stays available.
-        - If a specific site_id is currently ingesting, this tool returns a wait message for that site.
-
-        Topic-aware behavior:
-        - When site_id is omitted, a registered topic route can auto-select site_id from topic or query.
-        - Register topic routes with ingest_and_register_topic.
+        The first call after the server starts can be slow while the embedding model loads; wait for it.
+        If every selected site is being ingested, a message with the active job_id is returned instead.
+        When site_id and site_ids are omitted, a topic route (see ingest_and_register_topic) or a site
+        matched from the query is used.
         """
         if site_id and site_ids:
             raise ValueError("site_id and site_ids cannot be used together")
@@ -85,7 +80,8 @@ def register_search_tools(
                 return (
                     f"All selected sites are currently being ingested: "
                     f"{', '.join(response.skipped_active_site_ids)}. "
-                    f"Wait for completion with ingest_status(job_id). Active job_id(s): {', '.join(active_job_ids)}."
+                    "Wait for completion with wait_for_ingest_completion(job_id). "
+                    f"Active job_id(s): {', '.join(active_job_ids)}."
                 )
             scope = f" for sites {', '.join(selected_site_ids)}" if selected_site_ids else ""
             return f"No result found in indexed docs{scope}."
@@ -104,7 +100,7 @@ def register_search_tools(
         search_result = format_search_results(list(response.results))
         return f"{' '.join(headers)}\n\n{search_result}" if headers else search_result
 
-    @server.tool()
+    @server.tool(annotations=READ_ONLY_OPEN_WORLD)
     def suggest_documentation_urls(topic: str, max_results: int = 5) -> str:
         """Find candidate documentation URLs on the web for a topic.
 

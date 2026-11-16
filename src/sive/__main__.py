@@ -23,6 +23,10 @@ from .domain.client_install.service import (
 from .domain.core.sites import SiteDefinition
 from .domain.index.indexing import index_chunks, index_pages_incrementally, make_chunks
 from .domain.ingest.service import load_pages_for_site, run_ingest_for_site
+from .infra.vector_store.embedding_loader import (
+    DEFAULT_EMBEDDING_MODEL_NAME,
+    get_sentence_transformer_embedding_function,
+)
 from .infra.web.scraper import load_pages_jsonl, save_pages_jsonl
 
 
@@ -157,6 +161,24 @@ def cmd_install(args: argparse.Namespace) -> None:
 
     print("Note: skills et configurations MCP natives installes. Rechargez les skills ou redemarrez le client.")
 
+    if not args.skip_model_download:
+        _prefetch_embedding_model(DEFAULT_EMBEDDING_MODEL_NAME)
+
+
+def _prefetch_embedding_model(model_name: str) -> bool:
+    """Put the embedding model in the local cache now, so the first MCP call does not wait for a download."""
+    print(f"Preparation du modele d'embedding {model_name} (telecharge une seule fois, ~90 Mo)...", flush=True)
+    try:
+        get_sentence_transformer_embedding_function(model_name)
+    except Exception as exc:  # noqa: BLE001 - prefetch is optional; the server downloads on first use
+        print(
+            f"Avertissement: modele non telecharge ({exc}). Il sera telecharge au premier appel MCP; "
+            "relancez 'sive install' pour reessayer."
+        )
+        return False
+    print("Modele d'embedding pret: le serveur MCP le chargera depuis le cache local, sans reseau.")
+    return True
+
 
 def cmd_serve(_args: argparse.Namespace) -> None:
     # Import lazily so help/install paths do not require heavy runtime deps at startup.
@@ -247,7 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     index_common.add_argument(
         "--embedding-model",
-        default="sentence-transformers/all-MiniLM-L6-v2",
+        default=DEFAULT_EMBEDDING_MODEL_NAME,
         help="Modele SentenceTransformers utilise pour vectoriser les chunks.",
     )
     index_common.add_argument(
@@ -265,7 +287,10 @@ def build_parser() -> argparse.ArgumentParser:
         "scrape",
         parents=[crawl_common, site_common],
         help="Crawler la documentation et sauvegarder en JSONL brut",
-        description="Crawl un ou plusieurs sites de documentation et ecrit les pages brutes dans data/raw.",
+        description=(
+            "Crawl un ou plusieurs sites de documentation et ecrit les pages brutes dans le sous-dossier raw "
+            "du dossier de donnees (variable SIVE_DATA_DIR pour le choisir)."
+        ),
         formatter_class=formatter,
     )
     scrape.set_defaults(func=cmd_scrape)
@@ -321,7 +346,14 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument(
         "--mcp-cwd",
         default=None,
-        help="CWD MCP sauf Claude Code, qui ne supporte pas ce champ (defaut: dossier de l'executable).",
+        help="CWD MCP explicite (sauf Claude Code, qui ne supporte pas ce champ). Sans valeur, le client lance le "
+        "serveur depuis le dossier du projet.",
+    )
+    install.add_argument(
+        "--skip-model-download",
+        action="store_true",
+        help="Ne pas pre-telecharger le modele d'embedding (il sera telecharge au premier appel MCP). Sans effet "
+        "avec --output-dir.",
     )
     install.set_defaults(func=cmd_install)
 

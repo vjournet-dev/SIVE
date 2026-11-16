@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,12 @@ import tomlkit
 
 TEMPLATES_FILE_NAME = "skill_templates.json"
 MCP_CONFIG_SPECIAL_SOURCE = "mcp_config"
+
+# The first search waits for the embedding model to load, which exceeds the default client timeouts
+# (Codex: 10 s startup and 60 s per tool call, Copilot CLI: 180 s per tool call).
+CODEX_STARTUP_TIMEOUT_SEC = 60
+CODEX_TOOL_TIMEOUT_SEC = 900
+COPILOT_TIMEOUT_MS = 900_000
 
 SIVE_EXECUTABLE_CANDIDATES = [
     "sive",
@@ -144,30 +150,47 @@ def _resolve_install_path(relative_path: str, *, home: Path) -> Path:
     return home / rel_path
 
 
-def _resolve_default_mcp_command(
+def _resolve_mcp_command(
     *,
+    python_executable: str | None,
     which_func: Callable[[str], str | None],
     sys_executable: str,
-) -> tuple[str, str, list[str]]:
+) -> tuple[str, list[str]]:
+    if python_executable:
+        return python_executable, ["-m", "sive", "serve"]
+
     for candidate in SIVE_EXECUTABLE_CANDIDATES:
         executable_path = which_func(candidate)
         if executable_path:
-            command_path = str(Path(executable_path).resolve())
-            return command_path, str(Path(command_path).parent), ["serve"]
+            return str(Path(executable_path).resolve()), ["serve"]
 
-    command_path = sys_executable
-    return command_path, str(Path(command_path).resolve().parent), ["-m", "sive", "serve"]
+    return sys_executable, ["-m", "sive", "serve"]
+
+
+def _apply_server_entry(servers: MutableMapping[str, Any], values: dict[str, Any], cwd: str | None) -> None:
+    # Update an existing entry in place so options the user added (env, enabled tools...) survive a reinstall.
+    # Without an explicit cwd the client keeps its own project directory, so a stale cwd is dropped.
+    if cwd:
+        values = {**values, "cwd": cwd}
+    entry = servers.get("sive")
+    if not isinstance(entry, MutableMapping):
+        servers["sive"] = values
+        return
+    entry.update(values)
+    if not cwd:
+        entry.pop("cwd", None)
 
 
 def _build_mcp_server_config(
     command: str,
-    cwd: str,
     args: list[str],
     *,
     config_format: str,
+    cwd: str | None = None,
     existing: str | None = None,
     jsonc: bool = False,
 ) -> str:
+    values: dict[str, Any]
     if config_format == "codex":
         document = tomlkit.parse(existing) if existing is not None else tomlkit.document()
         servers = document.get("mcp_servers")
@@ -176,7 +199,13 @@ def _build_mcp_server_config(
             servers = document["mcp_servers"]
         if not isinstance(servers, (tomlkit.items.Table, tomlkit.items.InlineTable)):
             raise TypeError("MCP config 'mcp_servers' must be a table")
-        servers["sive"] = {"command": command, "args": args, "cwd": cwd}
+        values = {
+            "command": command,
+            "args": args,
+            "startup_timeout_sec": CODEX_STARTUP_TIMEOUT_SEC,
+            "tool_timeout_sec": CODEX_TOOL_TIMEOUT_SEC,
+        }
+        _apply_server_entry(servers, values, cwd)
         return tomlkit.dumps(document)
 
     payload = (
@@ -195,18 +224,20 @@ def _build_mcp_server_config(
         # OpenCode V2 nests servers under mcp.servers; drop the deprecated direct mcp.sive entry.
         mcp.pop("sive", None)
         servers = mcp.setdefault("servers", {})
-        server = {"type": "local", "command": [command, *args], "cwd": cwd}
+        values = {"type": "local", "command": [command, *args]}
     elif config_format in {"claude", "github"}:
         servers = payload.setdefault("mcpServers", {})
-        server = {"type": "stdio", "command": command, "args": args}
+        values = {"type": "stdio", "command": command, "args": args}
         if config_format == "github":
-            server.update({"type": "local", "cwd": cwd, "tools": ["*"]})
+            values.update({"type": "local", "tools": ["*"], "timeout": COPILOT_TIMEOUT_MS})
+        else:
+            cwd = None  # Claude Code has no cwd field for stdio servers
     else:
         raise ValueError(f"unsupported MCP config format: {config_format}")
 
     if not isinstance(servers, dict):
         raise TypeError("MCP servers must be an object")
-    servers["sive"] = server
+    _apply_server_entry(servers, values, cwd)
     return json.dumps(payload, indent=2) + "\n"
 
 
@@ -248,15 +279,11 @@ def install_skill_files_default_locations(
     resolved_sys_executable = sys_executable if sys_executable is not None else sys.executable
 
     selected_targets = _selected_targets(target, templates)
-    command, default_cwd, args = _resolve_default_mcp_command(
+    command, args = _resolve_mcp_command(
+        python_executable=python_executable,
         which_func=resolved_which,
         sys_executable=resolved_sys_executable,
     )
-    if python_executable:
-        command = python_executable
-        args = ["-m", "sive", "serve"]
-        default_cwd = str(Path(command).resolve().parent)
-    resolved_cwd = cwd or default_cwd
 
     planned_files: list[tuple[str, Path, str]] = []
     written_by_target: dict[str, list[Path]] = {}
@@ -275,9 +302,9 @@ def install_skill_files_default_locations(
                 try:
                     content = _build_mcp_server_config(
                         command,
-                        resolved_cwd,
                         args,
                         config_format=config_format,
+                        cwd=cwd,
                         existing=existing,
                         jsonc=file_path.suffix == ".jsonc",
                     )
@@ -322,26 +349,16 @@ def install_client_mcp_configs(
     selected_targets = _selected_targets(target, templates)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if python_executable:
-        command = python_executable
-        args = ["-m", "sive", "serve"]
-        resolved_cwd = cwd or str(Path(command).resolve().parent)
-    else:
-        command, default_cwd, args = _resolve_default_mcp_command(
-            which_func=resolved_which,
-            sys_executable=resolved_sys_executable,
-        )
-        resolved_cwd = cwd or default_cwd
+    command, args = _resolve_mcp_command(
+        python_executable=python_executable,
+        which_func=resolved_which,
+        sys_executable=resolved_sys_executable,
+    )
 
     written: list[Path] = []
     for selected_target in selected_targets:
         target_spec = templates["targets"][selected_target]
-        mcp_config = _build_mcp_server_config(
-            command,
-            resolved_cwd,
-            args,
-            config_format=target_spec["mcp_format"],
-        )
+        mcp_config = _build_mcp_server_config(command, args, config_format=target_spec["mcp_format"], cwd=cwd)
         path = output_dir / target_spec["mcp_output_file"]
         path.write_text(mcp_config, encoding="utf-8")
         written.append(path)
