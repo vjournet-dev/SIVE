@@ -21,7 +21,8 @@ Never build or upload to PyPI locally, never use `twine`, and never ask for PyPI
 
 ## Steps
 
-Stop immediately on the first failure and report it. Do not continue to later steps.
+Stop immediately on the first required-step failure and report it. Do not continue to later steps.
+Optional E2E diagnostics are not a release gate; report their results separately.
 
 ### 1. Preconditions
 
@@ -39,16 +40,22 @@ Stop immediately on the first failure and report it. Do not continue to later st
 
 ### 2. Validation gate (mandatory)
 
-- Launch the `dev-python-validation` agent. Continue only if its final outcome is exactly `SUCCESS`.
-- When the agent lacks an execution tool required by the caller, use a background agent
-  so it can pause for coordinated execution. For each `EXECUTION_REQUEST`, run the
-  requested commands through the caller's required execution tool and send stdout,
-  stderr, and exit codes back to the same agent. Wait for its assessment before advancing;
-  never bypass a failed check or count a command request as a successful validation.
-- Run the repository gates with no bypass:
+- Run these versioned repository gates sequentially, stopping on the first nonzero exit code:
   - `python -m ruff check src tests`
   - `python -m mypy src`
   - `python -m pytest -q`
+- Use the project's Python environment. Retain each command's full stdout, stderr and
+  exit code in session logs before summarizing; a missing result is not a pass.
+- These commands, not an agent's prose verdict, determine the validation gate. Do not
+  add generated inline drivers, ad hoc keyword assertions, external documentation URLs
+  or a requirement for `dev-python-validation` to return `SUCCESS`.
+- Only when explicitly requested, run `dev-python-validation` as a separate optional
+  E2E diagnostic. Report passed, failed, blocked and unexecuted checks distinctly.
+  Its tooling failures, external-service availability or diagnostic verdict do not
+  replace or override the required gates. Do not claim E2E success from pytest alone.
+- If an optional diagnostic demonstrates a reproducible application regression, report
+  the evidence and ask the user whether to address it before publishing; do not silently
+  ignore a known defect or label a harness failure as an application regression.
 
 ### 3. Bump the version
 

@@ -493,5 +493,11 @@ Tests must monkeypatch `sive.__main__.get_sentence_transformer_embedding_functio
   accept equivalent wording instead of requiring a list of synonymous literal phrases.
   This checks discoverability instructions, not whether a client actually invokes the skill.
 - Required gates: ruff, mypy, and the complete pytest suite.
+- Release validation uses those commands' exit codes, not a validation agent's verdict.
+  `dev-python-validation` is an optional E2E diagnostic, run only when requested; it must
+  distinguish harness/tooling failures from application regressions and retain full logs.
+  Do not generate ad hoc release drivers or require external documentation availability.
+  An optional diagnostic that demonstrates an application regression requires an explicit
+  user decision before publishing.
 - Install smoke tests must use temporary output/home directories, never real user configs.
 - Official format references are linked in README.md; OpenCode's contract targets v2.

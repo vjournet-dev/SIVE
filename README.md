@@ -575,12 +575,21 @@ Use this checklist before shipping a release branch/tag.
   - `python -m ruff check src tests`
   - `python -m mypy src`
   - `python -m pytest -q`
-4. Run robust runtime validation: `python scripts/e2e_runtime_validate_robust.py`.
-5. Confirm persisted state files are coherent after run:
-  - `data/raw/ingest_jobs.json`
-  - `data/raw/topic_routes.json`
-  - `data/raw/site_sync_state.json`
-6. Confirm MCP tool surface includes ingest, search, admin and auth-résumé tools.
+4. Optional, only when requested: run an E2E diagnostic with `dev-python-validation`.
+   Its verdict is not a release gate. The existing
+   `python scripts/e2e_runtime_validate_robust.py` contacts external documentation
+   and uses application storage: do not run it automatically during a release.
+   Use isolated test data and confirm the documentation scope before ingestion.
+5. During an optional E2E run, check persisted state files under the isolated data directory
+   (`raw/ingest_jobs.json`, `raw/topic_routes.json`, `raw/site_sync_state.json`) and confirm
+   the MCP ingest, search, admin and authentication tool surface.
+
+Release validation is determined by the exit codes of Ruff, mypy and pytest, not by an
+agent's prose verdict or generated inline checks. Retain full command output, exit codes
+and failure tracebacks in session logs. Report optional E2E failures, tooling blockers and
+unexecuted checks separately; do not claim E2E success from the unit suite alone.
+If an optional diagnostic demonstrates a reproducible application regression, present
+the evidence and confirm whether to fix it before publishing.
 
 - `ingest_and_register_topic` enregistre une route `topic -> site_id` et lance l'ingestion
 - `search_documentation` priorise automatiquement la documentation routee pour le sujet detecte
